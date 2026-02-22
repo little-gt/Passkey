@@ -23,7 +23,7 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
+$pluginVersion = '1.0.2'; // 与 Plugin.php 中的版本号保持一致
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -63,7 +63,7 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
         }
         
         .passkey-navbar-inner {
-            max-width: 1400px;
+            width: 100%;
             margin: 0 auto;
             padding: 16px 24px;
             display: flex;
@@ -116,7 +116,7 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
         
         /* 内容区域 */
         .passkey-main {
-            max-width: 1400px;
+            width: 100%;
             margin: 0 auto;
             padding: 24px;
             flex: 1;
@@ -374,7 +374,7 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
         }
         
         .passkey-footer-inner {
-            max-width: 1400px;
+            width: 100%;
             margin: 0 auto;
             padding: 0 24px;
             text-align: center;
@@ -478,6 +478,32 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
                 </div>
             </div>
             
+            <!-- 登录记录 -->
+            <div class="passkey-section">
+                <div class="passkey-section-header">
+                    <div class="passkey-section-title">近期登录记录</div>
+                </div>
+                <div class="passkey-section-body">
+                    <table class="passkey-table">
+                        <thead>
+                            <tr>
+                                <th>登录时间</th>
+                                <th>设备/浏览器</th>
+                                <th>IP 地址</th>
+                                <th>状态</th>
+                            </tr>
+                        </thead>
+                        <tbody id="passkey-login-logs">
+                            <tr>
+                                <td colspan="4" class="passkey-table-empty">
+                                    加载中...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
             <!-- 使用说明 -->
             <div class="passkey-section">
                 <div class="passkey-section-header">
@@ -545,12 +571,12 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
                     if (data.success) {
                         renderCredentials(data.data);
                     } else {
-                        showStatus('加载失败: ' + data.error, 'error');
+                        PasskeyManager.showNotification('加载失败: ' + data.error, 'error');
                         renderEmpty('加载失败');
                     }
                 })
                 .catch(function(error) {
-                    showStatus('网络错误: ' + error.message, 'error');
+                    PasskeyManager.showNotification('网络错误: ' + error.message, 'error');
                     renderEmpty('网络错误');
                 });
         }
@@ -610,21 +636,22 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
             .then(function(response) { return response.json(); })
             .then(function(data) {
                 if (data.success) {
-                    showStatus('删除成功', 'success');
+                    PasskeyManager.showNotification('删除成功', 'success');
                     loadCredentials();
                 } else {
-                    showStatus('删除失败: ' + data.error, 'error');
+                    PasskeyManager.showNotification('删除失败: ' + data.error, 'error');
                 }
             })
             .catch(function(error) {
-                showStatus('网络错误: ' + error.message, 'error');
+                PasskeyManager.showNotification('网络错误: ' + error.message, 'error');
             });
         }
         
         // 注册新的 Passkey
         registerBtn.addEventListener('click', function() {
             registerBtn.disabled = true;
-            registerBtn.textContent = '正在注册...';
+            var originalText = registerBtn.innerHTML;
+            registerBtn.innerHTML = '<span>⏳</span><span>正在注册...</span>';
             
             PasskeyManager.register()
                 .then(function(result) {
@@ -632,16 +659,55 @@ $pluginVersion = '1.0.1'; // 与 Plugin.php 中的版本号保持一致
                     loadCredentials();
                 })
                 .catch(function(error) {
-                    showStatus('注册失败: ' + error.message, 'error');
+                    // PasskeyManager 已经显示了通知，这里只需更新状态
+                    console.error('Register error:', error);
                 })
                 .finally(function() {
                     registerBtn.disabled = false;
-                    registerBtn.textContent = '添加新的 Passkey';
+                    registerBtn.innerHTML = originalText;
                 });
         });
         
-        // 页面加载时获取凭证列表
+        // 加载登录记录
+        function loadLoginLogs() {
+            var logsTable = document.getElementById('passkey-login-logs');
+            
+            fetch(PASSKEY_ACTION_URL + '?do=login-logs&limit=20')
+                .then(function(response) { return response.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        renderLoginLogs(data.data, logsTable);
+                    } else {
+                        logsTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">加载失败</td></tr>';
+                    }
+                })
+                .catch(function(error) {
+                    logsTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">网络错误</td></tr>';
+                });
+        }
+        
+        // 渲染登录记录
+        function renderLoginLogs(logs, table) {
+            if (!logs || logs.length === 0) {
+                table.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">暂无登录记录</td></tr>';
+                return;
+            }
+            
+            var html = '';
+            logs.forEach(function(log) {
+                html += '<tr>';
+                html += '<td>' + log.login_time + '</td>';
+                html += '<td>' + log.user_agent + '</td>';
+                html += '<td>' + log.ip_address + '</td>';
+                html += '<td><span style="color:#10b981;">✓ ' + log.status + '</span></td>';
+                html += '</tr>';
+            });
+            table.innerHTML = html;
+        }
+        
+        // 页面加载时获取凭证列表和登录记录
         loadCredentials();
+        loadLoginLogs();
     })();
     </script>
 </body>

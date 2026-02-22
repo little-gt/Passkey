@@ -55,6 +55,9 @@ class Action extends Widget implements ActionInterface
             case 'delete':
                 $this->deleteCredential();
                 break;
+            case 'login-logs':
+                $this->getLoginLogs();
+                break;
             default:
                 $this->error('Invalid action');
         }
@@ -292,17 +295,13 @@ class Action extends Widget implements ActionInterface
             
             // 如果是新用户，自动登录
             if ($isNewUser) {
-                // 获取用户信息用于生成 authCode
-                $userInfo = $this->db->fetchRow($this->db->select()
-                    ->from($this->prefix . 'users')
-                    ->where('uid = ?', $userId));
+                // 使用 Typecho 标准的 simpleLogin 方法
+                $userWidget = \Widget\User::alloc();
+                $expire = 30 * 24 * 3600;
                 
-                if ($userInfo) {
-                    Cookie::set('__typecho_uid', $userId);
-                    Cookie::set('__typecho_authCode', Common::hash($userInfo['password'], $userId));
-                    
+                if ($userWidget->simpleLogin($userId, false, $expire)) {
                     $this->success(array(
-                        'message' => '🎉 注册成功！欢迎使用 Passkey 登录。',
+                        'message' => '注册成功！欢迎使用 Passkey 登录',
                         'isNewUser' => true,
                         'redirect' => Options::alloc()->adminUrl
                     ));
@@ -351,14 +350,16 @@ class Action extends Widget implements ActionInterface
         session_start();
         
         if (!isset($_SESSION['passkey_login_challenge'])) {
-            $this->error('Invalid session');
+            $this->error('会话已过期，请重试');
             return;
         }
+        
+        $challenge = $_SESSION['passkey_login_challenge'];
         
         $data = json_decode(file_get_contents('php://input'), true);
         
         if (!$data || !isset($data['id']) || !isset($data['rawId']) || !isset($data['response'])) {
-            $this->error('Invalid data');
+            $this->error('数据格式错误');
             return;
         }
         
@@ -394,28 +395,73 @@ class Action extends Widget implements ActionInterface
             // 这里应该进行完整的 WebAuthn 验证
             // 为了简化，我们只做基本验证
             
-            // 登录用户
+            // 获取用户信息
             $user = $this->db->fetchRow($this->db->select()
                 ->from($this->prefix . 'users')
                 ->where('uid = ?', $credential['user_id']));
             
             if (!$user) {
-                $this->error('User not found');
+                $this->error('用户不存在');
                 return;
             }
             
-            // 设置登录状态
-            Cookie::set('__typecho_uid', $user['uid']);
-            Cookie::set('__typecho_authCode', Common::hash($user['password'], $user['uid']));
+            // 使用 Typecho 标准的 simpleLogin 方法
+            $userWidget = \Widget\User::alloc();
+            $expire = 30 * 24 * 3600;
             
+            if (!$userWidget->simpleLogin($user['uid'], false, $expire)) {
+                $this->error('登录失败：无法设置登录状态');
+                return;
+            }
+            
+            // 更新凭证最后使用时间（兼容旧版本数据表）
+            try {
+                $this->db->query($this->db->update($this->prefix . 'passkey_credentials')
+                    ->rows(array('last_used' => time()))
+                    ->where('id = ?', $credential['id']));
+            } catch (\Exception $e) {
+                // 如果字段不存在，忽略错误（兼容旧版本）
+                error_log('Failed to update last_used: ' . $e->getMessage());
+            }
+            
+            // 记录登录日志
+            $this->logLoginActivity($credential['user_id'], $credential['id'], $challenge);
+            
+            // 清除挑战（但保留在日志中）
             unset($_SESSION['passkey_login_challenge']);
             
             $this->success(array(
-                'message' => 'Login successful',
-                'redirect' => Options::alloc()->adminUrl
+                'message' => '登录成功',
+                'redirect' => Options::alloc()->adminUrl,
+                'user' => array(
+                    'name' => $user['name'],
+                    'screenName' => $user['screenName']
+                )
             ));
-        } catch (Exception $e) {
-            $this->error('Login failed: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            $this->error('登录失败: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 记录登录活动
+     */
+    private function logLoginActivity($userId, $credentialId, $challenge)
+    {
+        try {
+            $this->db->query($this->db->insert($this->prefix . 'passkey_login_logs')
+                ->rows(array(
+                    'user_id' => $userId,
+                    'credential_id' => $credentialId,
+                    'challenge' => $challenge,
+                    'ip_address' => $this->request->getIp(),
+                    'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+                    'login_time' => time(),
+                    'status' => 'success'
+                )));
+        } catch (\Exception $e) {
+            // 记录失败不影响登录流程
+            error_log('Failed to log Passkey login activity: ' . $e->getMessage());
         }
     }
     
@@ -426,7 +472,7 @@ class Action extends Widget implements ActionInterface
     {
         $user = \Widget\User::alloc();
         if (!$user->hasLogin()) {
-            $this->error('Please login first');
+            $this->error('请先登录');
             return;
         }
         
@@ -445,8 +491,8 @@ class Action extends Widget implements ActionInterface
             }
             
             $this->success($result);
-        } catch (Exception $e) {
-            $this->error('Failed to fetch credentials: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            $this->error('获取凭证列表失败: ' . $e->getMessage());
         }
     }
     
@@ -457,14 +503,16 @@ class Action extends Widget implements ActionInterface
     {
         $user = \Widget\User::alloc();
         if (!$user->hasLogin()) {
-            $this->error('Please login first');
+            $this->error('请先登录');
             return;
         }
         
-        $id = $this->request->get('id');
+        // 从 JSON body 中读取 ID
+        $data = json_decode(file_get_contents('php://input'), true);
+        $id = isset($data['id']) ? $data['id'] : $this->request->get('id');
         
         if (!$id) {
-            $this->error('Invalid credential ID');
+            $this->error('无效的凭证 ID');
             return;
         }
         
@@ -472,10 +520,80 @@ class Action extends Widget implements ActionInterface
             $this->db->query($this->db->delete($this->prefix . 'passkey_credentials')
                 ->where('id = ? AND user_id = ?', $id, $user->uid));
             
-            $this->success(array('message' => 'Credential deleted'));
-        } catch (Exception $e) {
-            $this->error('Failed to delete credential: ' . $e->getMessage());
+            $this->success(array('message' => '凭证已删除'));
+        } catch (\Exception $e) {
+            $this->error('删除失败: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * 获取登录日志
+     */
+    private function getLoginLogs()
+    {
+        $user = \Widget\User::alloc();
+        if (!$user->hasLogin()) {
+            $this->error('请先登录');
+            return;
+        }
+        
+        $limit = (int)$this->request->get('limit', 10);
+        if ($limit > 100) $limit = 100;
+        if ($limit < 1) $limit = 10;
+        
+        try {
+            $logs = $this->db->fetchAll(
+                $this->db->select('l.*, c.credential_id')
+                    ->from($this->prefix . 'passkey_login_logs AS l')
+                    ->join($this->prefix . 'passkey_credentials AS c', 'l.credential_id = c.id', \Typecho\Db::LEFT_JOIN)
+                    ->where('l.user_id = ?', $user->uid)
+                    ->order('l.login_time', \Typecho\Db::SORT_DESC)
+                    ->limit($limit)
+            );
+            
+            $result = array();
+            foreach ($logs as $log) {
+                $result[] = array(
+                    'id' => $log['id'],
+                    'credential_id' => isset($log['credential_id']) ? substr(base64_decode($log['credential_id']), 0, 16) . '...' : 'N/A',
+                    'ip_address' => $log['ip_address'],
+                    'user_agent' => $this->parseUserAgent($log['user_agent']),
+                    'login_time' => date('Y-m-d H:i:s', $log['login_time']),
+                    'status' => $log['status']
+                );
+            }
+            
+            $this->success($result);
+        } catch (\Exception $e) {
+            $this->error('获取登录日志失败: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * 解析 User Agent
+     */
+    private function parseUserAgent($ua)
+    {
+        if (empty($ua)) return '未知设备';
+        
+        // 简单的 UA 解析
+        $browser = '未知浏览器';
+        $os = '未知系统';
+        
+        // 检测浏览器
+        if (strpos($ua, 'Edg') !== false) $browser = 'Edge';
+        elseif (strpos($ua, 'Chrome') !== false) $browser = 'Chrome';
+        elseif (strpos($ua, 'Safari') !== false) $browser = 'Safari';
+        elseif (strpos($ua, 'Firefox') !== false) $browser = 'Firefox';
+        
+        // 检测操作系统
+        if (strpos($ua, 'Windows') !== false) $os = 'Windows';
+        elseif (strpos($ua, 'Mac OS') !== false) $os = 'macOS';
+        elseif (strpos($ua, 'Linux') !== false) $os = 'Linux';
+        elseif (strpos($ua, 'Android') !== false) $os = 'Android';
+        elseif (strpos($ua, 'iOS') !== false || strpos($ua, 'iPhone') !== false || strpos($ua, 'iPad') !== false) $os = 'iOS';
+        
+        return $browser . ' / ' . $os;
     }
     
     /**

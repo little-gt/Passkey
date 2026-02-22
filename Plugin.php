@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author little-gt
- * @version 1.0.1
+ * @version 1.0.2
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.0.1';
+    const VERSION = '1.0.2';
     /**
      * 激活插件方法
      */
@@ -47,6 +47,7 @@ class Plugin implements PluginInterface
                 public_key TEXT NOT NULL,
                 counter INTEGER DEFAULT 0,
                 created_at INTEGER NOT NULL,
+                last_used INTEGER DEFAULT NULL,
                 UNIQUE(credential_id)
             )";
         } else if ($adapter == 'SQLite') {
@@ -56,7 +57,8 @@ class Plugin implements PluginInterface
                 credential_id TEXT NOT NULL UNIQUE,
                 public_key TEXT NOT NULL,
                 counter INTEGER DEFAULT 0,
-                created_at INTEGER NOT NULL
+                created_at INTEGER NOT NULL,
+                last_used INTEGER DEFAULT NULL
             )";
         } else {
             $sql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_credentials (
@@ -66,6 +68,7 @@ class Plugin implements PluginInterface
                 public_key TEXT NOT NULL,
                 counter INT DEFAULT 0,
                 created_at INT NOT NULL,
+                last_used INT DEFAULT NULL,
                 UNIQUE KEY unique_credential (credential_id(255))
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
         }
@@ -73,8 +76,55 @@ class Plugin implements PluginInterface
         try {
             $db->query($sql);
         } catch (\Exception $e) {
-            throw new \Typecho\Plugin\Exception('创建数据表失败: ' . $e->getMessage());
+            throw new \Typecho\Plugin\Exception('创建凭证表失败: ' . $e->getMessage());
         }
+        
+        // 创建 passkey_login_logs 表
+        if ($adapter == 'Pgsql') {
+            $logSql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_login_logs (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                credential_id INTEGER NOT NULL,
+                challenge TEXT NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                user_agent TEXT,
+                login_time INTEGER NOT NULL,
+                status VARCHAR(20) DEFAULT 'success'
+            )";
+        } else if ($adapter == 'SQLite') {
+            $logSql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_login_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                credential_id INTEGER NOT NULL,
+                challenge TEXT NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                user_agent TEXT,
+                login_time INTEGER NOT NULL,
+                status VARCHAR(20) DEFAULT 'success'
+            )";
+        } else {
+            $logSql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_login_logs (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                credential_id INT NOT NULL,
+                challenge TEXT NOT NULL,
+                ip_address VARCHAR(45) NOT NULL,
+                user_agent TEXT,
+                login_time INT NOT NULL,
+                status VARCHAR(20) DEFAULT 'success',
+                INDEX idx_user_id (user_id),
+                INDEX idx_login_time (login_time)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+        }
+        
+        try {
+            $db->query($logSql);
+        } catch (\Exception $e) {
+            throw new \Typecho\Plugin\Exception('创建登录日志表失败: ' . $e->getMessage());
+        }
+        
+        // 升级数据表：检查并添加缺失的字段
+        self::upgradeDatabase($db, $prefix, $adapter);
         
         // 注册路由
         \Utils\Helper::addRoute('passkey_action', '/action/passkey', 'TypechoPlugin\Passkey\Action', 'action');
@@ -84,10 +134,83 @@ class Plugin implements PluginInterface
     }
     
     /**
+     * 升级数据库表结构
+     */
+    private static function upgradeDatabase($db, $prefix, $adapter)
+    {
+        try {
+            // 检查 passkey_credentials 表是否有 last_used 字段
+            if ($adapter == 'Pgsql') {
+                $checkSql = "SELECT column_name FROM information_schema.columns WHERE table_name='" . $prefix . "passkey_credentials' AND column_name='last_used'";
+            } else if ($adapter == 'SQLite') {
+                $checkSql = "PRAGMA table_info(" . $prefix . "passkey_credentials)";
+            } else {
+                $checkSql = "SHOW COLUMNS FROM " . $prefix . "passkey_credentials LIKE 'last_used'";
+            }
+            
+            $result = $db->fetchAll($checkSql);
+            
+            if ($adapter == 'SQLite') {
+                // SQLite 返回所有字段，需要检查是否包含 last_used
+                $hasLastUsed = false;
+                foreach ($result as $row) {
+                    if (isset($row['name']) && $row['name'] == 'last_used') {
+                        $hasLastUsed = true;
+                        break;
+                    }
+                }
+                if (!$hasLastUsed) {
+                    $result = array();
+                }
+            }
+            
+            // 如果字段不存在，添加它
+            if (empty($result)) {
+                if ($adapter == 'Pgsql') {
+                    $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INTEGER DEFAULT NULL";
+                } else if ($adapter == 'SQLite') {
+                    $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INTEGER DEFAULT NULL";
+                } else {
+                    $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INT DEFAULT NULL";
+                }
+                $db->query($alterSql);
+            }
+        } catch (\Exception $e) {
+            // 升级失败不影响插件激活，只记录错误
+            error_log('Passkey plugin upgrade failed: ' . $e->getMessage());
+        }
+    }
+    
+    /**
      * 禁用插件方法
      */
     public static function deactivate()
-    {
+    {        
+        $options = Options::alloc();
+        
+        // 检查是否需要删除数据库
+        try {
+            $plugin = $options->plugin('Passkey');
+            $removeData = isset($plugin->removeDataOnUninstall) && $plugin->removeDataOnUninstall == '1';
+            
+            if ($removeData) {
+                // 删除数据表
+                $db = \Typecho\Db::get();
+                $prefix = $db->getPrefix();
+                
+                try {
+                    // 删除凭证表
+                    $db->query("DROP TABLE IF EXISTS " . $prefix . "passkey_credentials");
+                    // 删除登录日志表
+                    $db->query("DROP TABLE IF EXISTS " . $prefix . "passkey_login_logs");
+                } catch (\Exception $e) {
+                    error_log('Failed to drop Passkey tables: ' . $e->getMessage());
+                }
+            }
+        } catch (\Exception $e) {
+            // 如果配置不存在，忽略错误
+        }
+        
         \Utils\Helper::removeRoute('passkey_action');
         \Utils\Helper::removePanel(3, 'Passkey/Panel.php');
         
@@ -236,6 +359,30 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             $registerDescription
         );
         $form->addInput($enableRegister);
+        
+        // 卸载时删除数据库选项
+        $removeDataDescription = '选择在禁用插件时是否删除数据库中的所有 Passkey 数据。';
+        $removeDataDescription .= '<br><br><div style="background:#fff3cd;padding:10px;margin-top:8px;border-left:3px solid #ffc107;">';
+        $removeDataDescription .= '<strong>警告：</strong>如果选择“删除”，禁用插件时将永久删除以下数据：<br>';
+        $removeDataDescription .= '<ul style="margin:5px 0;padding-left:20px;color:#721c24;line-height:1.6;">';
+        $removeDataDescription .= '<li>所有用户的 Passkey 凭证</li>';
+        $removeDataDescription .= '<li>所有 Passkey 登录日志</li>';
+        $removeDataDescription .= '</ul>';
+        $removeDataDescription .= '<strong>此操作不可恢复！</strong>请谨慎选择。';
+        $removeDataDescription .= '</div>';
+        $removeDataDescription .= '<br><strong>建议：</strong>如果您只是临时禁用插件，选择“保留”，以便之后重新启用时恢复数据。';
+        
+        $removeDataOnUninstall = new Radio(
+            'removeDataOnUninstall',
+            array(
+                '0' => '保留数据（推荐）',
+                '1' => '删除数据'
+            ),
+            '0',
+            '禁用插件时的数据处理',
+            $removeDataDescription
+        );
+        $form->addInput($removeDataOnUninstall);
     }
     
     /**
@@ -317,12 +464,12 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         // 标记为自动注入模式，防止 passkey.js 重复注入
         window.PASSKEY_AUTO_INJECTED = true;
         </script>
-        <div id="passkey-login-container" style="margin-top: 20px;">
-            <div style="text-align: center; margin-bottom: 10px; color: #999; position: relative;">
-                <span style="background: #fff; padding: 0 10px; position: relative; z-index: 1;">或</span>
-                <hr style="position: absolute; top: 50%; left: 0; right: 0; margin: 0; border: none; border-top: 1px solid #e0e0e0; z-index: 0;">
+        <div id="passkey-login-container" style="margin-top:15px;padding-top:15px;border-top:1px solid #e5e7eb;">
+            <div style="text-align:center;margin-bottom:12px;color:#9ca3af;font-size:13px;">
+                或使用 Passkey 登录
             </div>
-            <button type="button" id="passkey-login-btn" class="btn primary" style="width: 100%; padding: 10px; font-size: 14px;">
+            <button type="button" id="passkey-login-btn" class="btn btn-l w-100" 
+                style="width:100%;padding:10px;font-size:14px;cursor:pointer;background:#4f46e5;color:white;border:1px solid #4338ca;border-radius:4px;transition:all 0.2s ease;">
                 🔐 使用 Passkey 登录
             </button>
         </div>
@@ -338,11 +485,20 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             function initPasskeyButton() {
                 var passkeyBtn = document.getElementById('passkey-login-btn');
                 if (passkeyBtn && typeof PasskeyManager !== 'undefined') {
+                    // 添加悬停效果
+                    passkeyBtn.onmouseover = function() {
+                        this.style.background = '#4338ca';
+                    };
+                    passkeyBtn.onmouseout = function() {
+                        this.style.background = '#4f46e5';
+                    };
+                    
+                    // 点击事件
                     passkeyBtn.addEventListener('click', function() {
                         this.disabled = true;
-                        this.textContent = '正在验证...';
+                        this.innerHTML = '🔐 正在登录...';
                         PasskeyManager.login()
-                            .catch(function() {
+                            .finally(function() {
                                 passkeyBtn.disabled = false;
                                 passkeyBtn.innerHTML = '🔐 使用 Passkey 登录';
                             });
