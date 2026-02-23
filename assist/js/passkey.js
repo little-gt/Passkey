@@ -210,14 +210,13 @@ var PasskeyManager = (function() {
         // 创建通知元素
         var notification = document.createElement('div');
         notification.className = 'passkey-notification passkey-notification-' + type;
-        notification.style.cssText = 'background:#fff;border-left:4px solid;padding:15px 20px;margin-bottom:10px;' +
-            'border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);animation:slideInRight 0.3s ease;' +
-            'display:flex;align-items:flex-start;gap:12px;';
+        notification.style.cssText = 'background:var(--passport-card-bg,#fff);border:1px solid;padding:15px 20px;margin-bottom:10px;' +
+            'animation:slideInRight 0.3s ease;display:flex;align-items:flex-start;gap:12px;color:var(--passport-text,#1f2937);';
         
         // 设置边框颜色和图标
-        var borderColor = '#3b82f6';
+        var borderColor = '#467b96';
         var iconSvg = SVGIcons.info;
-        var iconColor = '#3b82f6';
+        var iconColor = '#467b96';
         
         if (type === 'success') {
             borderColor = '#10b981';
@@ -232,7 +231,7 @@ var PasskeyManager = (function() {
             iconSvg = SVGIcons.alert;
             iconColor = '#f59e0b';
         }
-        notification.style.borderLeftColor = borderColor;
+        notification.style.borderColor = borderColor;
         
         // SVG图标容器
         var iconSpan = document.createElement('span');
@@ -242,17 +241,17 @@ var PasskeyManager = (function() {
         
         // 消息文本
         var messageDiv = document.createElement('div');
-        messageDiv.style.cssText = 'flex:1;color:#1f2937;font-size:14px;line-height:1.5;word-break:break-word;';
+        messageDiv.style.cssText = 'flex:1;color:var(--passport-text,#1f2937);font-size:14px;line-height:1.5;word-break:break-word;';
         messageDiv.textContent = message;
         
         // 关闭按钮
         var closeBtn = document.createElement('button');
         closeBtn.innerHTML = '×';
         closeBtn.style.cssText = 'background:none;border:none;font-size:24px;line-height:1;cursor:pointer;' +
-            'color:#6b7280;padding:0;margin-left:8px;flex-shrink:0;width:20px;height:20px;' +
+            'color:var(--passport-placeholder,#6b7280);padding:0;margin-left:8px;flex-shrink:0;width:20px;height:20px;' +
             'transition:color 0.2s ease;';
-        closeBtn.onmouseover = function() { this.style.color = '#1f2937'; };
-        closeBtn.onmouseout = function() { this.style.color = '#6b7280'; };
+        closeBtn.onmouseover = function() { this.style.color = 'var(--passport-text,#1f2937)'; };
+        closeBtn.onmouseout = function() { this.style.color = 'var(--passport-placeholder,#6b7280)'; };
         closeBtn.onclick = function() {
             notification.style.animation = 'slideOutRight 0.3s ease';
             setTimeout(function() {
@@ -712,57 +711,57 @@ var PasskeyManager = (function() {
             
             // 创建表单容器
             var formBox = document.createElement('div');
-            formBox.style.cssText = 'background:#fff;padding:30px;border-radius:12px;' +
-                'box-shadow:0 4px 20px rgba(0,0,0,0.15);max-width:420px;width:90%;animation:scaleIn 0.3s ease;';
+            formBox.style.cssText = 'background:var(--passport-card-bg,#fff);padding:30px;' +
+                'border:1px solid var(--passport-border,#e1e4e8);max-width:420px;width:90%;animation:scaleIn 0.3s ease;color:var(--passport-text,#1f2937);';
             
             formBox.innerHTML = 
-                '<h3 style="margin:0 0 20px;color:#1f2937;font-size:20px;display:flex;align-items:center;gap:10px;">' +
-                    '<span style="color:#4f46e5;">' + SVGIcons.fingerprint + '</span>' +
+                '<h3 style="margin:0 0 20px;color:var(--passport-text,#1f2937);font-size:20px;display:flex;align-items:center;gap:10px;">' +
+                    '<span style="color:var(--passport-primary,#467b96);">' + SVGIcons.fingerprint + '</span>' +
                     '创建新账户' +
                 '</h3>' +
-                '<p style="color:#6b7280;margin-bottom:20px;font-size:14px;line-height:1.5;">请填写以下信息以完成注册。所有字段仅用于创建您的账户，不会与第三方共享。</p>' +
+                '<p style="color:var(--passport-placeholder,#6b7280);margin-bottom:20px;font-size:14px;line-height:1.5;">请填写以下信息以完成注册。所有字段仅用于创建您的账户，不会与第三方共享。</p>' +
                 '<form id="passkey-register-form">' +
                     '<div style="margin-bottom:15px;">' +
-                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;font-size:14px;">用户名 *</label>' +
+                        '<label style="display:block;margin-bottom:5px;color:var(--passport-text,#374151);font-weight:500;font-size:14px;">用户名 *</label>' +
                         '<input type="text" name="username" required ' +
-                            'style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;' +
-                            'transition:border-color 0.2s ease;" ' +
+                            'style="width:100%;padding:10px 12px;border:2px solid var(--passport-border,#e1e4e8);font-size:14px;' +
+                            'transition:border-color 0.2s ease;background:var(--passport-input-bg,#f8f9fa);color:var(--passport-text,#1f2937);" ' +
                             'placeholder="3-20个字符，仅限字母数字下划线" ' +
                             'pattern="[a-zA-Z0-9_]{3,20}" ' +
                             'title="用户名只能包含字母、数字和下划线，长度3-20个字符">' +
                         '<div id="username-error" style="color:#ef4444;font-size:12px;margin-top:5px;display:none;"></div>' +
                     '</div>' +
                     '<div style="margin-bottom:15px;">' +
-                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;font-size:14px;">邮箱 *</label>' +
+                        '<label style="display:block;margin-bottom:5px;color:var(--passport-text,#374151);font-weight:500;font-size:14px;">邮箱 *</label>' +
                         '<input type="email" name="email" required ' +
-                            'style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;' +
-                            'transition:border-color 0.2s ease;" ' +
+                            'style="width:100%;padding:10px 12px;border:2px solid var(--passport-border,#e1e4e8);font-size:14px;' +
+                            'transition:border-color 0.2s ease;background:var(--passport-input-bg,#f8f9fa);color:var(--passport-text,#1f2937);" ' +
                             'placeholder="your@email.com">' +
                         '<div id="email-error" style="color:#ef4444;font-size:12px;margin-top:5px;display:none;"></div>' +
                     '</div>' +
                     '<div style="margin-bottom:20px;">' +
-                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;font-size:14px;">昵称</label>' +
+                        '<label style="display:block;margin-bottom:5px;color:var(--passport-text,#374151);font-weight:500;font-size:14px;">昵称</label>' +
                         '<input type="text" name="screenName" ' +
-                            'style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;' +
-                            'transition:border-color 0.2s ease;" ' +
+                            'style="width:100%;padding:10px 12px;border:2px solid var(--passport-border,#e1e4e8);font-size:14px;' +
+                            'transition:border-color 0.2s ease;background:var(--passport-input-bg,#f8f9fa);color:var(--passport-text,#1f2937);" ' +
                             'placeholder="显示名称（可选，最多30个字符）" ' +
                             'maxlength="30">' +
                         '<div id="screenName-error" style="color:#ef4444;font-size:12px;margin-top:5px;display:none;"></div>' +
                     '</div>' +
                     '<div style="display:flex;gap:10px;">' +
                         '<button type="submit" id="passkey-submit-btn" ' +
-                            'style="flex:1;padding:11px;background:#4f46e5;color:white;border:none;border-radius:6px;cursor:pointer;' +
+                            'style="flex:1;padding:11px;background:var(--passport-primary,#467b96);color:white;border:none;cursor:pointer;' +
                             'font-size:14px;font-weight:500;transition:background 0.2s ease;">' +
                             '确认注册' +
                         '</button>' +
                         '<button type="button" id="passkey-cancel-btn" ' +
-                            'style="flex:1;padding:11px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;cursor:pointer;' +
+                            'style="flex:1;padding:11px;background:var(--passport-border,#e5e7eb);color:var(--passport-text,#374151);border:none;cursor:pointer;' +
                             'font-size:14px;font-weight:500;transition:background 0.2s ease;">' +
                             '取消' +
                         '</button>' +
                     '</div>' +
-                    '<div style="margin-top:15px;padding:10px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#6b7280;">' +
-                        '<strong style="color:#374151;">提示：</strong>注册后您将使用设备的生物识别功能（如指纹、面容）进行安全登录。' +
+                    '<div style="margin-top:15px;padding:10px;background:var(--passport-input-bg,#f3f4f6);border:1px solid var(--passport-border,#e1e4e8);font-size:12px;color:var(--passport-placeholder,#6b7280);">' +
+                        '<strong style="color:var(--passport-text,#374151);">提示：</strong>注册后您将使用设备的生物识别功能（如指纹、面容）进行安全登录。' +
                     '</div>' +
                 '</form>';
             
@@ -776,7 +775,7 @@ var PasskeyManager = (function() {
                 style.textContent = '@keyframes fadeIn{from{opacity:0}to{opacity:1}}' +
                     '@keyframes fadeOut{from{opacity:1}to{opacity:0}}' +
                     '@keyframes scaleIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}}' +
-                    'input:focus{outline:none;border-color:#4f46e5!important;}' +
+                    'input:focus{outline:none;border-color:var(--passport-primary,#467b96)!important;background:var(--passport-card-bg,#fff)!important;}' +
                     'button:hover{opacity:0.9;}';
                 document.head.appendChild(style);
             }
@@ -795,12 +794,12 @@ var PasskeyManager = (function() {
                 var errorDiv = document.getElementById(errorElementId);
                 
                 if (!result.valid) {
-                    input.style.borderColor = '#ef4444';
+                    input.style.borderColor = 'var(--passport-error,#ef4444)';
                     errorDiv.textContent = result.error;
                     errorDiv.style.display = 'block';
                     return false;
                 } else {
-                    input.style.borderColor = '#10b981';
+                    input.style.borderColor = 'var(--passport-success,#10b981)';
                     errorDiv.style.display = 'none';
                     return true;
                 }
@@ -815,7 +814,7 @@ var PasskeyManager = (function() {
                 if (this.value.length > 0) {
                     validateField(this, Validator.username, 'username-error');
                 } else {
-                    this.style.borderColor = '#d1d5db';
+                    this.style.borderColor = 'var(--passport-border,#e1e4e8)';
                     document.getElementById('username-error').style.display = 'none';
                 }
             });
@@ -828,7 +827,7 @@ var PasskeyManager = (function() {
                 if (this.value.length > 0) {
                     validateField(this, Validator.email, 'email-error');
                 } else {
-                    this.style.borderColor = '#d1d5db';
+                    this.style.borderColor = 'var(--passport-border,#e1e4e8)';
                     document.getElementById('email-error').style.display = 'none';
                 }
             });
@@ -1163,20 +1162,20 @@ var PasskeyManager = (function() {
         // 创建 Passkey 登录按钮容器
         var container = document.createElement('div');
         container.id = 'passkey-login-container';
-        container.style.cssText = 'margin-top:15px;padding-top:15px;border-top:1px solid #e5e7eb;';
+        container.style.cssText = 'margin-top:24px;';
         
         // 创建分隔文字
         var divider = document.createElement('div');
-        divider.style.cssText = 'text-align:center;margin-bottom:12px;color:#9ca3af;font-size:13px;';
-        divider.textContent = '或使用 Passkey 登录';
+        divider.style.cssText = 'text-align:center;margin-bottom:10px;color:var(--passport-placeholder,#999);font-size:13px;';
+        divider.textContent = '或';
         
         // 创建 Passkey 按钮
         var button = document.createElement('button');
         button.type = 'button';
         button.id = 'passkey-login-btn';
-        button.className = 'btn btn-l w-100';
-        button.style.cssText = 'width:100%;padding:10px 15px;font-size:14px;cursor:pointer;' +
-            'background:#4f46e5;color:white;border:1px solid #4338ca;border-radius:6px;' +
+        button.className = 'passport-btn';
+        button.style.cssText = 'width:100%;height:48px;padding:0 24px;font-size:16px;font-weight:600;cursor:pointer;' +
+            'background:var(--passport-primary,#467b96);color:#ffffff;border:none;' +
             'transition:all 0.2s ease;display:flex;align-items:center;justify-content:center;gap:8px;';
         
         // 创建按钮内容（SVG + 文字）
@@ -1192,14 +1191,10 @@ var PasskeyManager = (function() {
         
         // 按钮悬停效果
         button.onmouseover = function() {
-            this.style.background = '#4338ca';
-            this.style.transform = 'translateY(-1px)';
-            this.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.3)';
+            this.style.background = 'var(--passport-primary-light,#5a8bb3)';
         };
         button.onmouseout = function() {
-            this.style.background = '#4f46e5';
-            this.style.transform = 'translateY(0)';
-            this.style.boxShadow = 'none';
+            this.style.background = 'var(--passport-primary,#467b96)';
         };
         
         container.appendChild(divider);

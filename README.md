@@ -1,11 +1,15 @@
 # Passkey 登录插件 for Typecho
 
-一个为 Typecho 博客系统提供 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。支持登录历史审计、完整数据管理、企业级安全配置和优雅的网页内通知系统。
+一个为 Typecho 博客系统提供企业级 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。
 
-![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3--rc4-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+**v1.0.3 重大升级：** 完整的服务器端签名验证（ES256/RS256）、IEEE P1363 ↔ DER 自动转换、速率限制、Challenge 验证、签名计数器、安全审计日志，符合 FIDO2/WebAuthn 标准的企业级安全解决方案。
+
+![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
+![PHP](https://img.shields.io/badge/PHP-7.0+-777BB4?style=for-the-badge&logo=php&logoColor=white)
+![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
 
 参与讨论：https://forum.typecho.org/viewtopic.php?p=62488#p62488
 
@@ -29,18 +33,36 @@
 
 ## ✨ 功能特性
 
-🔐 **Passkey 登录** - 使用生物识别（指纹、面容）或设备 PIN 快速登录  
+### 🔐 核心功能
+🔑 **Passkey 登录** - 使用生物识别（指纹、面容）或设备 PIN 快速登录  
 ⚙️ **后台管理** - 在 Typecho 后台管理和绑定 Passkey  
-� **登录记录** - 仪表盘查询近期 Passkey 登录历史，掌握账户安全状况  
+📊 **登录记录** - 仪表盘查询近期 Passkey 登录历史，掌握账户安全状况  
 🚀 **自动注入** - 自动在登录页面添加 Passkey 登录选项  
 🎯 **手动模式** - 支持手动控制登录按钮的显示位置  
 📱 **多设备支持** - 可以绑定多个设备的 Passkey  
-🛡️ **安全可靠** - 基于 FIDO2/WebAuthn 国际标准  
 👤 **注册支持** - 允许新用户通过 Passkey 创建账户  
-💬 **网页内通知** - 所有操作反馈使用优雅的网页内通知系统  
-🖥️ **响应式设计** - 优化 PC 宽屏幕仪表盘显示效果  
-🗑️ **完整卸载** - 移除插件时可选择删除所有数据，不留痕迹  
-🔄 **版本控制** - 资源文件带版本号，避免缓存问题
+
+### 🛡️ 企业级安全
+✅ **完整签名验证** - 服务器端实现 ES256/RS256 算法验证（PHP OpenSSL）  
+✅ **IEEE P1363 ↔ DER** - 自动转换 WebAuthn 签名格式兼容 OpenSSL  
+✅ **速率限制** - 基于 Session 的注册/登录频率限制，防暴力破解  
+✅ **Challenge 验证** - 可配置超时时间（60-600秒），防重放攻击  
+✅ **签名计数器** - 检测克隆的认证器（Clone Detection）  
+✅ **Origin 验证** - 严格/宽松模式，防域名欺骗  
+✅ **数据长度限制** - 防止恶意超大数据 DoS 攻击  
+✅ **安全日志记录** - 完整记录验证失败事件，便于审计  
+
+### 🎨 用户体验
+💬 **优雅通知** - 网页内通知系统，无需弹窗  
+🖥️ **响应式设计** - 适配 Passport 设计系统（无荧光、无圆角、无阴影）  
+🔄 **版本控制** - 资源文件带版本号，避免缓存  
+🗑️ **完整卸载** - 移除插件时可选删除所有数据  
+
+### 🌐 浏览器兼容
+🔧 **智能检测** - 自动识别浏览器类型和版本  
+🍎 **Safari 适配** - Safari < 14 自动跳过不支持的选项  
+🦊 **Firefox 增强** - 版本检查和友好错误提示  
+🎯 **条件特性** - 动态调整 WebAuthn 选项
 
 ## 🔐 工作原理
 
@@ -66,9 +88,15 @@
 
 ### 服务器要求
 - ✅ Typecho 1.0+
-- ✅ PHP 7.0+
+- ✅ PHP 7.0+ （推荐 7.4+）
+- ✅ PHP 扩展：OpenSSL、mbstring、json、session
 - ✅ MySQL 5.5+ / PostgreSQL 9.0+ / SQLite 3.0+
 - ✅ HTTPS 环境（本地开发可使用 localhost）
+
+**PHP 扩展检查：**
+```bash
+php -m | grep -E 'openssl|mbstring|json|session'
+```
 
 ### 浏览器要求
 - Chrome 67+（2018年5月）
@@ -105,6 +133,7 @@
    ├── Plugin.php
    ├── Action.php
    ├── Panel.php
+   ├── WebAuthn.php
    ├── LICENSE
    └── assist/
        ├── css/
@@ -266,6 +295,88 @@ document.addEventListener('DOMContentLoaded', function() {
 
 ## 🔧 技术说明
 
+### WebAuthn 签名验证实现
+
+插件实现了完整的服务器端 WebAuthn 签名验证，支持主流算法：
+
+#### 支持的签名算法
+
+| 算法 | COSE ID | 说明 | 实现方式 |
+|------|---------|------|----------|
+| **ES256** | -7 | ECDSA P-256 + SHA-256 | PHP OpenSSL + DER 转换 |
+| **RS256** | -257 | RSA PKCS#1 + SHA-256 | PHP OpenSSL |
+
+#### ES256 签名验证流程
+
+```
+WebAuthn 签名 (IEEE P1363)         OpenSSL 验证
+┌─────────────────────┐          ┌──────────────┐
+│ r (32 bytes)        │          │ SEQUENCE {   │
+│ s (32 bytes)        │   转换    │   INTEGER r  │
+│ 总计 64 bytes       │   ────>   │   INTEGER s  │
+└─────────────────────┘          │ }            │
+                                 └──────────────┘
+```
+
+**关键技术点：**
+1. **格式转换**：WebAuthn 使用 IEEE P1363 格式（r||s），OpenSSL 需要 DER 格式
+2. **公钥编码**：COSE 格式公钥 → DER 编码 → PEM 格式
+3. **签名验证**：使用 PHP `openssl_verify()` 验证 SHA-256 签名
+
+```php
+// IEEE P1363 转 DER
+private static function ieee1363ToDer($signature) {
+    $r = substr($signature, 0, 32);
+    $s = substr($signature, 32, 32);
+    
+    // 编码为 DER INTEGER
+    $rDer = self::encodeDERInteger($r);
+    $sDer = self::encodeDERInteger($s);
+    
+    // 构造 SEQUENCE
+    return "\x30" . chr(strlen($rDer . $sDer)) . $rDer . $sDer;
+}
+
+// 验证 ES256 签名
+private static function verifyES256($data, $signature, $publicKey) {
+    // 自动检测并转换格式
+    if (strlen($signature) === 64) {
+        $signature = self::ieee1363ToDer($signature);
+    }
+    
+    // 构造 PEM 格式公钥
+    $pem = self::buildECPublicKeyPEM($publicKey['x'], $publicKey['y']);
+    
+    // OpenSSL 验证
+    return openssl_verify($data, $signature, $pem, OPENSSL_ALGO_SHA256) === 1;
+}
+```
+
+#### 安全配置选项
+
+插件管理界面提供 6 项可配置的安全参数：
+
+| 配置项 | 默认值 | 说明 |
+|--------|--------|------|
+| Challenge 超时 | 300 秒 | 单次认证有效期 |
+| 注册频率限制 | 5 次/5 分钟 | 防止批量注册 |
+| 登录频率限制 | 10 次/5 分钟 | 防止暴力破解 |
+| 严格签名计数器 | 警告模式 | 检测克隆认证器 |
+| 严格 Origin 验证 | 宽松模式 | 支持 localhost 开发 |
+| 安全日志 | 启用 | 记录验证失败事件 |
+
+#### CBOR 安全解析
+
+WebAuthn 数据使用 CBOR 编码，插件实施安全限制：
+
+```php
+// 防止恶意深层嵌套和超大数据
+const MAX_DEPTH = 10;           // 最大嵌套深度
+const MAX_ARRAY_LENGTH = 1000;  // 数组最大元素数
+const MAX_MAP_LENGTH = 1000;    // 对象最大键值对数
+const MAX_STRING_LENGTH = 65536; // 字符串最大长度
+```
+
 ### 数据库结构
 
 插件自动创建 2 个数据表：
@@ -276,7 +387,7 @@ document.addEventListener('DOMContentLoaded', function() {
 CREATE TABLE typecho_passkey_credentials (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
-    credential_id TEXT NOT NULL,
+    credential_id VARCHAR(512) NOT NULL,  -- 优化为 512（utf8mb4 兼容）
     public_key TEXT NOT NULL,
     counter INT DEFAULT 0,
     created_at INT NOT NULL,
@@ -287,10 +398,15 @@ CREATE TABLE typecho_passkey_credentials (
 **字段说明：**
 - `id` - 主键
 - `user_id` - 关联的 Typecho 用户 ID
-- `credential_id` - WebAuthn 凭证唯一标识符（Base64 编码）
-- `public_key` - 公钥数据
-- `counter` - 签名计数器（防重放攻击）
+- `credential_id` - WebAuthn 凭证唯一标识符（Base64 编码，最大 512 字符）
+- `public_key` - COSE 格式公钥数据（Base64 编码）
+- `counter` - 签名计数器（防重放攻击和克隆检测）
 - `created_at` - 创建时间戳
+
+**v1.0.3 优化：**
+- 凭证 ID 从 `VARCHAR(1024)` 改为 `VARCHAR(512)`
+- 原因：MySQL utf8mb4 索引限制为 3072 字节（512 × 4 = 2048 < 3072）
+- 自动升级：插件激活时自动迁移现有数据
 
 #### 2. 登录记录表 `typecho_passkey_login_logs`
 
@@ -605,7 +721,7 @@ Passkey/
 ├── Plugin.php          # 主插件类
 │   ├── activate()      # 激活：创建数据表、注册路由
 │   ├── deactivate()    # 禁用：可选删除数据、移除路由
-│   ├── config()        # 配置面板：注入模式、RP 配置等
+│   ├── config()        # 配置面板：注入模式、RP 配置、安全选项
 │   ├── header()        # 注入 CSS 资源
 │   ├── footer()        # 注入 JS 资源
 │   └── render()        # 自动注入登录按钮
@@ -618,7 +734,8 @@ Passkey/
 │   ├── listCredentials()   # 列出凭证
 │   ├── deleteCredential()  # 删除凭证
 │   ├── getLoginLogs()      # 获取日志
-│   └── logLoginActivity()  # 记录日志
+│   ├── logLoginActivity()  # 记录日志
+│   └── checkRateLimit()    # 速率限制检查
 │
 ├── Panel.php           # 管理面板
 │   ├── 凭证列表展示
@@ -627,16 +744,29 @@ Passkey/
 │   ├── 登录记录展示
 │   └── 使用说明
 │
+├── WebAuthn.php        # WebAuthn 验证类
+│   ├── verifyAttestation()      # 验证注册凭证
+│   ├── verifyAssertion()        # 验证登录签名
+│   ├── verifyES256()            # ES256 签名验证
+│   ├── verifyRS256()            # RS256 签名验证
+│   ├── ieee1363ToDer()          # IEEE P1363 → DER 转换
+│   ├── encodeECPublicKey()      # EC 公钥 DER 编码
+│   ├── encodeRSAPublicKey()     # RSA 公钥 DER 编码
+│   ├── parseCBOR()              # CBOR 安全解析
+│   └── verifyOrigin()           # Origin 验证
+│
 └── assist/
     ├── css/
     │   └── style.css   # 样式文件
-    │       ├── 登录按钮样式
+    │       ├── Passport 设计系统适配
+    │       ├── 无荧光、无圆角、无阴影
     │       ├── 通知系统样式
     │       └── 管理面板样式
     └── js/
         └── passkey.js  # 核心 JavaScript
             ├── PasskeyManager 对象
             ├── WebAuthn API 封装
+            ├── 浏览器检测与适配
             ├── 通知系统
             └── 自动注入逻辑
 ```
@@ -727,20 +857,73 @@ js/passkey.js?v=1.0.2
 
 ### 插件安全措施
 
-- ✅ Challenge 验证（一次性使用）
-- ✅ Session 存储（防止跨请求攻击）
-- ✅ 签名计数器（防重放攻击）
-- ✅ 用户名、邮箱验证（注册时）
-- ✅ 重复检查（防止重复注册）
-- ✅ 登录审计日志（完整记录登录历史）
+#### 核心安全机制
+- ✅ **完整签名验证** - 服务器端实现 ES256/RS256 算法验证
+- ✅ **格式自动转换** - IEEE P1363 ↔ DER，兼容 OpenSSL
+- ✅ **签名计数器** - 检测认证器克隆攻击
+- ✅ **Challenge 验证** - 可配置超时，一次性使用
+- ✅ **Origin 验证** - 防止域名欺骗
+- ✅ **速率限制** - 基于 Session，防暴力破解
+- ✅ **数据长度限制** - 防止 DoS 攻击
+- ✅ **CBOR 安全解析** - 限制嵌套深度和数据大小
+- ✅ **输入验证** - 用户名、邮箱格式验证
+- ✅ **重复检查** - 防止重复注册凭证
+- ✅ **安全日志** - 完整记录验证失败事件
+
+#### 安全配置模式
+
+**开发环境（宽松）：**
+```
+Challenge 超时: 600 秒
+严格计数器: 警告模式（不阻止登录）
+严格 Origin: 禁用（支持 localhost）
+速率限制: 较宽松
+```
+
+**生产环境（标准）：**
+```
+Challenge 超时: 300 秒
+严格计数器: 警告模式
+严格 Origin: 启用（验证 HTTPS）
+速率限制: 标准
+```
+
+**高安全环境（严格）：**
+```
+Challenge 超时: 120 秒
+严格计数器: 阻止模式（拒绝克隆）
+严格 Origin: 启用
+速率限制: 严格
+安全日志: 强制启用
+```
 
 ### 部署建议
 
 1. **必须使用 HTTPS**（生产环境）
-2. 启用 CSP 头增强安全性
-3. 定期备份数据库
-4. 定期检查登录记录，及时发现异常登录行为
-5. 保持插件更新
+2. 根据环境选择合适的安全配置
+3. 启用 CSP 头增强安全性
+4. 定期备份数据库
+5. 定期检查登录记录和安全日志
+6. 保持插件更新
+
+### 安全审计
+
+查看安全日志（需启用安全日志记录）：
+
+```sql
+-- 查看验证失败记录
+SELECT * FROM typecho_passkey_login_logs 
+WHERE status = 'failed' 
+ORDER BY login_time DESC LIMIT 50;
+
+-- 统计失败登录
+SELECT ip_address, COUNT(*) as attempts 
+FROM typecho_passkey_login_logs 
+WHERE status = 'failed' 
+  AND login_time > UNIX_TIMESTAMP(NOW() - INTERVAL 1 HOUR)
+GROUP BY ip_address 
+ORDER BY attempts DESC;
+```
 
 ## ❓ 常见问题
 
@@ -832,6 +1015,38 @@ js/passkey.js?v=1.0.2
 3. 记录包含：登录时间、IP 地址、设备信息
 4. 如有异常登录，请及时删除相关凭证并修改密码
 
+### 10. v1.0.3 的签名验证是什么？
+
+**答案：** 服务器端完整验证！
+
+v1.0.3 实现了符合 WebAuthn 标准的服务器端签名验证：
+- ✅ **ES256 验证**：支持 ECDSA P-256 + SHA-256 算法
+- ✅ **RS256 验证**：支持 RSA PKCS#1 + SHA-256 算法
+- ✅ **格式转换**：自动处理 IEEE P1363 ↔ DER 格式
+- ✅ **公钥验证**：使用 PHP OpenSSL 验证签名
+
+这确保了认证过程的真实性和完整性，防止中间人攻击。
+
+### 11. 安全配置如何选择？
+
+**答案：** 根据环境选择！
+
+- **开发环境**：宽松模式，Challenge 600秒，支持 localhost
+- **生产环境（标准）**：默认配置，平衡安全与可用性
+- **高安全环境**：严格模式，Challenge 120秒，签名计数器阻止模式
+
+在插件设置中可以自由调整这些参数。
+
+### 12. 什么是签名计数器验证？
+
+**答案：** 检测克隆的认证器！
+
+签名计数器是认证器内部的递增计数器：
+- ✅ **正常使用**：每次认证后计数器递增
+- ⚠️ **克隆检测**：如果计数器不增或减少，说明认证器可能被克隆
+- 🔧 **警告模式**：记录日志但允许登录（适合开发）
+- 🛡️ **阻止模式**：拒绝登录（适合高安全环境）
+
 ## 🐛 故障排查
 
 ### 启用调试模式
@@ -886,38 +1101,64 @@ DESC typecho_passkey_login_logs;
 
 ## 📜 更新日志
 
-### v2.0.0 (2026-02-23)
+### v1.0.3 (2026-02-23)
 
-**重大更新 - 企业级安全增强：**
-- 🔐 完整的 WebAuthn 验证：实现服务器端签名验证（ES256、RS256），使用 PHP OpenSSL
-- 🛡️ 安全配置管理：插件管理界面新增 6 项安全配置，支持可视化调整
-- ⚙️ 可配置安全参数：Challenge 超时、注册/登录频率限制、严格模式开关
-- 📊 智能速率限制：基于 Session 的防暴力破解机制，独立计数
-- 🔍 签名计数器验证：防止克隆的认证器攻击（Clone Detection）
-- 📏 数据长度限制：防止恶意超大数据导致的 DoS 攻击
-- 🔒 CBOR 安全解析：最大嵌套深度 10 层，数组/对象最大 1000 元素
-- 🌐 Origin 严格验证：支持宽松模式（开发）和严格模式（生产）
-- 📝 安全日志系统：记录所有验证失败事件，便于审计
+**🎉 重大版本升级 - 企业级安全解决方案**
 
-**浏览器兼容性增强：**
-- 🔧 智能浏览器检测：自动识别 Chrome、Firefox、Safari、Edge 及版本
-- 🍎 Safari 适配：Safari < 14 自动跳过不支持的 `authenticatorAttachment` 选项
-- 🦊 Firefox 版本检查：拒绝 Firefox < 60，显示友好升级提示
-- 🎯 条件特性支持：根据浏览器版本动态调整 WebAuthn 选项
-- 💬 浏览器特定错误提示：根据不同浏览器显示针对性的错误信息
+v1.0.3 是一个重大版本升级，从基础认证插件升级为符合 WebAuthn 标准的企业级安全解决方案。核心实现完整的服务器端签名验证、安全配置系统、浏览器兼容性增强和 UI 设计系统升级。
 
-**安全文档与测试：**
-- 📚 新增 `SECURITY.md`：详细的安全机制说明和配置最佳实践
-- ✅ 新增 `TESTING.md`：完整的安全测试清单和测试用例
-- 📖 配置文档：开发环境、标准生产、高安全生产三套推荐配置
+#### 核心验证系统
+- 🔐 **完整 WebAuthn 验证**：实现服务器端签名验证（ES256、RS256），使用 PHP OpenSSL
+- 🔄 **签名格式转换**：自动处理 IEEE P1363 ↔ DER 格式，兼容 OpenSSL
+- 🔑 **公钥 DER 编码**：修复 COSE → DER → PEM 转换，正确编码 EC 公钥
+- ✅ **CBOR 安全解析**：限制嵌套深度（10层）、数组/对象大小（1000元素）
+- 📏 **数据长度限制**：防止恶意超大数据导致的 DoS 攻击（credential_id 最大 512 字符）
 
-**默认配置（推荐）：**
+#### 数据库优化
+- 💾 **字段优化**：credential_id 从 VARCHAR(1024) 改为 VARCHAR(512)
+- 🗃️ **索引兼容**：修复 MySQL utf8mb4 索引长度限制（512 × 4 = 2048 < 3072 字节）
+- 🔄 **自动升级**：插件激活时自动检测并迁移现有数据
+- 📊 **编码修复**：凭证 ID 使用 base64url 编码，避免二进制数据导致的 UTF-8 错误
+
+#### 安全配置系统
+- ⚙️ **可视化配置**：插件管理界面新增 6 项安全配置选项
+- ⏱️ **Challenge 超时**：可配置 60-600 秒，默认 300 秒
+- 🚦 **速率限制**：注册（5次/300秒）、登录（10次/300秒），基于 Session 独立计数
+- 🔒 **签名计数器**：支持警告/阻止模式，检测克隆认证器
+- 🌐 **Origin 验证**：严格/宽松模式，支持 localhost 开发
+- 📝 **安全日志**：完整记录验证失败事件，便于审计
+
+#### 浏览器兼容性
+- 🔧 **智能检测**：自动识别 Chrome、Firefox、Safari、Edge 及版本
+- 🍎 **Safari 适配**：Safari < 14 自动跳过不支持的 `authenticatorAttachment` 选项
+- 🦊 **Firefox 增强**：拒绝 Firefox < 60 并显示友好升级提示
+- 🎯 **条件特性**：根据浏览器版本动态调整 WebAuthn 选项
+- 💬 **针对性提示**：根据不同浏览器显示专门的错误信息
+
+#### 用户界面优化
+- 🎨 **设计系统升级**：适配 Passport 设计（无荧光色、无圆角、无阴影）
+- 🖌️ **CSS 变量支持**：使用 `--passport-primary` 等主题色
+- 📱 **响应式优化**：按钮高度统一（48px 桌面 / 44px 移动）
+- 🎯 **通知样式**：统一边框样式，去除 box-shadow
+
+#### 问题修复
+- 🐛 **登录日志空响应**：修复输出缓冲区导致的 JSON 响应丢失
+- 🐛 **UTF-8 编码错误**：修复 base64_decode 产生的二进制数据导致 json_encode 失败
+- 🐛 **Session 管理**：优化 session_start() 调用，避免重复启动警告
+- 🐛 **ES256 验证**：修复 EC 公钥 DER 编码问题，正确编码 ecPublicKey 和 prime256v1 OID
+
+#### 文档完善
+- 📚 **安全配置指南**：三套推荐配置（开发/标准/高安全）
+- 📖 **技术细节**：详细说明签名验证流程、格式转换原理
+- 🔍 **安全审计**：SQL 查询示例，便于监控异常登录
+
+**默认安全配置（平衡安全与可用性）：**
 ```
 Challenge 超时: 300 秒
-注册频率限制: 5 次/300 秒
-登录频率限制: 10 次/300 秒
-严格计数器: 警告模式（开发友好）
-严格 Origin: 宽松模式（支持 localhost）
+注册频率: 5 次/5 分钟
+登录频率: 10 次/5 分钟
+严格计数器: 警告模式
+严格 Origin: 宽松模式
 安全日志: 启用
 ```
 
@@ -967,11 +1208,22 @@ Challenge 超时: 300 秒
 
 ## 🔗 参考资源
 
-- [WebAuthn 规范](https://www.w3.org/TR/webauthn-2/)
+### 官方文档
+- [WebAuthn 规范（Level 2）](https://www.w3.org/TR/webauthn-2/)
 - [Web Authentication API (MDN)](https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API)
 - [FIDO Alliance](https://fidoalliance.org/)
+- [CTAP 2 规范](https://fidoalliance.org/specs/fido-v2.0-ps-20190130/fido-client-to-authenticator-protocol-v2.0-ps-20190130.html)
+
+### 技术标准
+- [COSE (RFC 8152)](https://datatracker.ietf.org/doc/html/rfc8152) - 密钥格式
+- [CBOR (RFC 8949)](https://datatracker.ietf.org/doc/html/rfc8949) - 编码格式
+- [Base64url (RFC 4648)](https://datatracker.ietf.org/doc/html/rfc4648#section-5) - URL 安全编码
+
+### 开发资源
 - [Typecho 官网](https://typecho.org/)
-- [Can I Use: WebAuthn](https://caniuse.com/webauthn)
+- [Can I Use: WebAuthn](https://caniuse.com/webauthn) - 浏览器兼容性
+- [WebAuthn.io](https://webauthn.io/) - 在线演示
+- [WebAuthn Guide](https://webauthn.guide/) - 图解指南
 
 ## 📄 许可证
 
