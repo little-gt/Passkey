@@ -8,6 +8,7 @@
 ![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP-7.0+-777BB4?style=for-the-badge&logo=php&logoColor=white)
 ![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
+
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
 
@@ -308,14 +309,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 #### ES256 签名验证流程
 
-```
-WebAuthn 签名 (IEEE P1363)         OpenSSL 验证
-┌─────────────────────┐          ┌──────────────┐
-│ r (32 bytes)        │          │ SEQUENCE {   │
-│ s (32 bytes)        │   转换    │   INTEGER r  │
-│ 总计 64 bytes       │   ────>   │   INTEGER s  │
-└─────────────────────┘          │ }            │
-                                 └──────────────┘
+```mermaid
+flowchart LR
+    A["WebAuthn 签名<br/>(IEEE P1363)<br/><br/>r 32 bytes<br/>s 32 bytes<br/>总计 64 bytes"] -->|转换| B["OpenSSL 验证<br/>(DER格式)<br/><br/>SEQUENCE {<br/>  INTEGER r<br/>  INTEGER s<br/>}"]
+    style A fill:#f0f0f0,stroke:#333
+    style B fill:#e0f0ff,stroke:#333
 ```
 
 **关键技术点：**
@@ -563,24 +561,27 @@ CREATE TABLE typecho_passkey_login_logs (
 
 #### 注册流程（Registration）
 
-```
-客户端                     服务器                    认证器
-  │                         │                         │
-  ├──1. 请求注册选项────────>│                         │
-  │                         ├──2. 生成 challenge      │
-  │                         ├──3. 保存到 session      │
-  │<──4. 返回 PublicKeyCredentialCreationOptions───┤
-  │                         │                         │
-  ├──5. navigator.credentials.create()──────────────>│
-  │                         │                   6. 用户验证
-  │                         │                   7. 生成密钥对
-  │                         │                   8. 私钥存储在设备
-  │<──9. 返回 attestation（包含公钥）─────────────────┤
-  │                         │                         │
-  ├──10. 发送 attestation──>│                         │
-  │                         ├──11. 验证 challenge     │
-  │                         ├──12. 存储公钥到数据库   │
-  │<──13. 注册成功───────────┤                         │
+```mermaid
+sequenceDiagram
+    participant Client as 客户端
+    participant Server as 服务器
+    participant Auth as 认证器
+    
+    Client->>Server: 1. 请求注册选项
+    Server->>Server: 2. 生成 challenge
+    Server->>Server: 3. 保存到 session
+    Server-->>Client: 4. 返回 PublicKeyCredentialCreationOptions
+    
+    Client->>Auth: 5. navigator.credentials.create()
+    Auth->>Auth: 6. 用户验证
+    Auth->>Auth: 7. 生成密钥对
+    Auth->>Auth: 8. 私钥存储在设备
+    Auth-->>Client: 9. 返回 attestation（包含公钥）
+    
+    Client->>Server: 10. 发送 attestation
+    Server->>Server: 11. 验证 challenge
+    Server->>Server: 12. 存储公钥到数据库
+    Server-->>Client: 13. 注册成功
 ```
 
 **关键点：**
@@ -591,28 +592,31 @@ CREATE TABLE typecho_passkey_login_logs (
 
 #### 登录流程（Authentication）
 
-```
-客户端                     服务器                    认证器
-  │                         │                         │
-  ├──1. 请求登录选项────────>│                         │
-  │                         ├──2. 生成新 challenge    │
-  │                         ├──3. 保存到 session      │
-  │<──4. 返回 PublicKeyCredentialRequestOptions────┤
-  │                         │                         │
-  ├──5. navigator.credentials.get()─────────────────>│
-  │                         │                   6. 用户验证
-  │                         │                   7. 使用私钥签名
-  │<──8. 返回签名数据─────────────────────────────────┤
-  │                         │                         │
-  ├──9. 发送签名───────────>│                         │
-  │                         ├──10. 查找凭证记录       │
-  │                         ├──11. 验证签名           │
-  │                         ├──12. 验证 challenge     │
-  │                         ├──13. 记录登录日志       │
-  │                         ├──14. 创建登录会话       │
-  │<──15. 登录成功───────────┤                         │
-  │                         │                         │
-  ├──16. 跳转到后台          │                         │
+```mermaid
+sequenceDiagram
+    participant Client as 客户端
+    participant Server as 服务器
+    participant Auth as 认证器
+    
+    Client->>Server: 1. 请求登录选项
+    Server->>Server: 2. 生成新 challenge
+    Server->>Server: 3. 保存到 session
+    Server-->>Client: 4. 返回 PublicKeyCredentialRequestOptions
+    
+    Client->>Auth: 5. navigator.credentials.get()
+    Auth->>Auth: 6. 用户验证
+    Auth->>Auth: 7. 使用私钥签名
+    Auth-->>Client: 8. 返回签名数据
+    
+    Client->>Server: 9. 发送签名
+    Server->>Server: 10. 查找凭证记录
+    Server->>Server: 11. 验证签名
+    Server->>Server: 12. 验证 challenge
+    Server->>Server: 13. 记录登录日志
+    Server->>Server: 14. 创建登录会话
+    Server-->>Client: 15. 登录成功
+    
+    Client->>Client: 16. 跳转到后台
 ```
 
 **安全机制：**
