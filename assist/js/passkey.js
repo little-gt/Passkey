@@ -1,21 +1,199 @@
 /**
  * Passkey Manager
- * WebAuthn API 封装 - 优化版
+ * WebAuthn API 封装，提供注册和登录功能
+ * 增强了浏览器兼容性（Firefox、Safari）和前端验证
  */
 var PasskeyManager = (function() {
     'use strict';
     
     /**
-     * 检查浏览器是否支持 WebAuthn
+     * SVG 图标库
+     */
+    var SVGIcons = {
+        fingerprint: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4"/><path d="M14 13.12c0 2.38 0 6.38-1 8.88"/><path d="M17.29 21.02c.12-.6.43-2.3.5-3.02"/><path d="M2 12a10 10 0 0 1 18-6"/><path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/><path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/><path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>',
+        check: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+        x: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+        alert: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>',
+        info: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
+        loading: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg>'
+    };
+    
+    /**
+     * 浏览器和平台检测
+     */
+    var BrowserDetector = {
+        userAgent: navigator.userAgent.toLowerCase(),
+        platform: navigator.platform.toLowerCase(),
+        
+        isFirefox: function() {
+            return this.userAgent.indexOf('firefox') > -1;
+        },
+        
+        isSafari: function() {
+            return this.userAgent.indexOf('safari') > -1 && 
+                   this.userAgent.indexOf('chrome') === -1 &&
+                   this.userAgent.indexOf('chromium') === -1;
+        },
+        
+        isChrome: function() {
+            return this.userAgent.indexOf('chrome') > -1 || 
+                   this.userAgent.indexOf('chromium') > -1;
+        },
+        
+        isEdge: function() {
+            return this.userAgent.indexOf('edg') > -1;
+        },
+        
+        isMac: function() {
+            return this.platform.indexOf('mac') > -1 || 
+                   this.userAgent.indexOf('mac') > -1;
+        },
+        
+        isIOS: function() {
+            return /iphone|ipad|ipod/.test(this.userAgent);
+        },
+        
+        isWindows: function() {
+            return this.platform.indexOf('win') > -1;
+        },
+        
+        getBrowserName: function() {
+            if (this.isFirefox()) return 'Firefox';
+            if (this.isSafari()) return 'Safari';
+            if (this.isEdge()) return 'Edge';
+            if (this.isChrome()) return 'Chrome';
+            return 'Unknown';
+        },
+        
+        getPlatformName: function() {
+            if (this.isIOS()) return 'iOS';
+            if (this.isMac()) return 'macOS';
+            if (this.isWindows()) return 'Windows';
+            return 'Unknown';
+        }
+    };
+    
+    /**
+     * 前端验证工具
+     */
+    var Validator = {
+        // 验证用户名（3-20个字符，字母数字下划线）
+        username: function(value) {
+            if (!value || typeof value !== 'string') {
+                return { valid: false, error: '用户名不能为空' };
+            }
+            
+            var trimmed = value.trim();
+            if (trimmed.length < 3) {
+                return { valid: false, error: '用户名至少需要3个字符' };
+            }
+            if (trimmed.length > 20) {
+                return { valid: false, error: '用户名不能超过20个字符' };
+            }
+            if (!/^[a-zA-Z0-9_]+$/.test(trimmed)) {
+                return { valid: false, error: '用户名只能包含字母、数字和下划线' };
+            }
+            
+            return { valid: true, value: trimmed };
+        },
+        
+        // 验证邮箱
+        email: function(value) {
+            if (!value || typeof value !== 'string') {
+                return { valid: false, error: '邮箱不能为空' };
+            }
+            
+            var trimmed = value.trim();
+            var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            
+            if (!emailRegex.test(trimmed)) {
+                return { valid: false, error: '邮箱格式不正确' };
+            }
+            if (trimmed.length > 100) {
+                return { valid: false, error: '邮箱地址过长' };
+            }
+            
+            return { valid: true, value: trimmed };
+        },
+        
+        // 验证昵称（可选，1-30个字符）
+        screenName: function(value) {
+            if (!value || typeof value !== 'string') {
+                return { valid: true, value: '' };
+            }
+            
+            var trimmed = value.trim();
+            if (trimmed.length > 30) {
+                return { valid: false, error: '昵称不能超过30个字符' };
+            }
+            
+            return { valid: true, value: trimmed };
+        }
+    };
+    
+    /**
+     * 检查浏览器是否支持 WebAuthn（增强版）
      */
     function isSupported() {
-        return window.PublicKeyCredential !== undefined && 
-               navigator.credentials !== undefined &&
-               navigator.credentials.create !== undefined;
+        // 基础检查
+        if (typeof window.PublicKeyCredential === 'undefined') {
+            return false;
+        }
+        
+        if (typeof navigator.credentials === 'undefined') {
+            return false;
+        }
+        
+        if (typeof navigator.credentials.create !== 'function' ||
+            typeof navigator.credentials.get !== 'function') {
+            return false;
+        }
+        
+        // Firefox 特殊检查
+        if (BrowserDetector.isFirefox()) {
+            // Firefox 60+ 支持 WebAuthn
+            var match = BrowserDetector.userAgent.match(/firefox\/(\d+)/);
+            if (match && parseInt(match[1]) < 60) {
+                console.warn('Passkey: Firefox version too old, require 60+');
+                return false;
+            }
+        }
+        
+        // Safari 特殊检查
+        if (BrowserDetector.isSafari()) {
+            // Safari 13+ 支持 WebAuthn
+            if (BrowserDetector.isIOS()) {
+                // iOS Safari 14.5+ 支持完整的 WebAuthn
+                var match = BrowserDetector.userAgent.match(/version\/(\d+)/);
+                if (match && parseInt(match[1]) < 14) {
+                    console.warn('Passkey: iOS Safari version too old, require 14+');
+                    return false;
+                }
+            } else if (BrowserDetector.isMac()) {
+                // macOS Safari 13+ 支持
+                var match = BrowserDetector.userAgent.match(/version\/(\d+)/);
+                if (match && parseInt(match[1]) < 13) {
+                    console.warn('Passkey: macOS Safari version too old, require 13+');
+                    return false;
+                }
+            }
+        }
+        
+        return true;
     }
     
     /**
-     * 页面内通知系统
+     * 检查网络连接
+     */
+    function checkNetwork() {
+        if (typeof navigator.onLine !== 'undefined' && !navigator.onLine) {
+            return { connected: false, error: '网络连接已断开，请检查您的网络' };
+        }
+        return { connected: true };
+    }
+    
+    /**
+     * 页面内通知系统（使用SVG图标）
      */
     function showNotification(message, type) {
         type = type || 'info'; // info, success, error, warning
@@ -33,28 +211,34 @@ var PasskeyManager = (function() {
         var notification = document.createElement('div');
         notification.className = 'passkey-notification passkey-notification-' + type;
         notification.style.cssText = 'background:#fff;border-left:4px solid;padding:15px 20px;margin-bottom:10px;' +
-            'border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,0.15);animation:slideInRight 0.3s ease;' +
+            'border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);animation:slideInRight 0.3s ease;' +
             'display:flex;align-items:flex-start;gap:12px;';
         
-        // 设置边框颜色
+        // 设置边框颜色和图标
         var borderColor = '#3b82f6';
-        var icon = 'ℹ️';
+        var iconSvg = SVGIcons.info;
+        var iconColor = '#3b82f6';
+        
         if (type === 'success') {
             borderColor = '#10b981';
-            icon = '✅';
+            iconSvg = SVGIcons.check;
+            iconColor = '#10b981';
         } else if (type === 'error') {
             borderColor = '#ef4444';
-            icon = '❌';
+            iconSvg = SVGIcons.x;
+            iconColor = '#ef4444';
         } else if (type === 'warning') {
             borderColor = '#f59e0b';
-            icon = '⚠️';
+            iconSvg = SVGIcons.alert;
+            iconColor = '#f59e0b';
         }
         notification.style.borderLeftColor = borderColor;
         
-        // 图标
+        // SVG图标容器
         var iconSpan = document.createElement('span');
-        iconSpan.textContent = icon;
-        iconSpan.style.cssText = 'font-size:20px;line-height:1;flex-shrink:0;';
+        iconSpan.innerHTML = iconSvg;
+        iconSpan.style.cssText = 'flex-shrink:0;display:flex;align-items:center;justify-content:center;' +
+            'width:24px;height:24px;color:' + iconColor + ';';
         
         // 消息文本
         var messageDiv = document.createElement('div');
@@ -65,7 +249,10 @@ var PasskeyManager = (function() {
         var closeBtn = document.createElement('button');
         closeBtn.innerHTML = '×';
         closeBtn.style.cssText = 'background:none;border:none;font-size:24px;line-height:1;cursor:pointer;' +
-            'color:#6b7280;padding:0;margin-left:8px;flex-shrink:0;width:20px;height:20px;';
+            'color:#6b7280;padding:0;margin-left:8px;flex-shrink:0;width:20px;height:20px;' +
+            'transition:color 0.2s ease;';
+        closeBtn.onmouseover = function() { this.style.color = '#1f2937'; };
+        closeBtn.onmouseout = function() { this.style.color = '#6b7280'; };
         closeBtn.onclick = function() {
             notification.style.animation = 'slideOutRight 0.3s ease';
             setTimeout(function() {
@@ -92,7 +279,8 @@ var PasskeyManager = (function() {
             var style = document.createElement('style');
             style.id = 'passkey-notification-styles';
             style.textContent = '@keyframes slideInRight{from{opacity:0;transform:translateX(100px)}to{opacity:1;transform:translateX(0)}}' +
-                '@keyframes slideOutRight{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(100px)}}';
+                '@keyframes slideOutRight{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(100px)}}' +
+                '@keyframes passkeyRotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
             document.head.appendChild(style);
         }
     }
@@ -142,21 +330,48 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 注册 Passkey
+     * 注册 Passkey（增强版）
      */
     function register() {
         return new Promise(function(resolve, reject) {
+            // 检查浏览器支持
             if (!isSupported()) {
-                showNotification('您的浏览器不支持 WebAuthn', 'error');
+                var browserName = BrowserDetector.getBrowserName();
+                var platformName = BrowserDetector.getPlatformName();
+                var errorMsg = '您的浏览器（' + browserName + ' on ' + platformName + '）不支持 WebAuthn';
+                
+                if (BrowserDetector.isSafari() && !BrowserDetector.isIOS()) {
+                    errorMsg += '，请确保使用 Safari 13 或更高版本';
+                } else if (BrowserDetector.isFirefox()) {
+                    errorMsg += '，请确保使用 Firefox 60 或更高版本';
+                }
+                
+                showNotification(errorMsg, 'error');
                 reject(new Error('Browser not supported'));
+                return;
+            }
+            
+            // 检查网络连接
+            var networkStatus = checkNetwork();
+            if (!networkStatus.connected) {
+                showNotification(networkStatus.error, 'error');
+                reject(new Error('Network disconnected'));
                 return;
             }
             
             showNotification('正在准备注册...', 'info');
             
             // 获取注册选项
+            var fetchTimeout = setTimeout(function() {
+                reject(new Error('请求超时，请检查网络连接'));
+            }, 15000);
+            
             fetch(PASSKEY_ACTION_URL + '?do=register-options')
                 .then(function(response) {
+                    clearTimeout(fetchTimeout);
+                    if (!response.ok) {
+                        throw new Error('服务器响应错误: ' + response.status);
+                    }
                     return response.json();
                 })
                 .then(function(data) {
@@ -165,6 +380,11 @@ var PasskeyManager = (function() {
                     }
                     
                     var options = data.data;
+                    
+                    // 验证服务器返回的数据
+                    if (!options.challenge || !options.user || !options.rp) {
+                        throw new Error('服务器返回的数据不完整');
+                    }
                     
                     // 转换为 WebAuthn 格式
                     var publicKeyOptions = {
@@ -176,12 +396,28 @@ var PasskeyManager = (function() {
                             displayName: options.user.displayName
                         },
                         pubKeyCredParams: options.pubKeyCredParams,
-                        timeout: options.timeout,
-                        attestation: options.attestation,
-                        authenticatorSelection: options.authenticatorSelection
+                        timeout: options.timeout || 60000,
+                        attestation: options.attestation || 'none',
+                        authenticatorSelection: options.authenticatorSelection || {}
                     };
                     
-                    showNotification('请使用您的设备完成身份验证...', 'info');
+                    // Safari 特殊处理
+                    if (BrowserDetector.isSafari()) {
+                        // Safari 可能需要用户手势才能调用 WebAuthn API
+                        showNotification('您正在使用 Safari 浏览器，请在弹出窗口中完成验证', 'info');
+                        
+                        // 某些 Safari 版本对 authenticatorSelection 支持不完整
+                        if (!publicKeyOptions.authenticatorSelection.userVerification) {
+                            publicKeyOptions.authenticatorSelection.userVerification = 'preferred';
+                        }
+                    }
+                    
+                    // Firefox 特殊处理
+                    if (BrowserDetector.isFirefox()) {
+                        showNotification('您正在使用 Firefox 浏览器，请使用您的设备完成身份验证...', 'info');
+                    } else {
+                        showNotification('请使用您的设备完成身份验证...', 'info');
+                    }
                     
                     // 创建凭证
                     return navigator.credentials.create({
@@ -191,6 +427,11 @@ var PasskeyManager = (function() {
                 .then(function(credential) {
                     if (!credential) {
                         throw new Error('创建凭证失败');
+                    }
+                    
+                    // 验证凭证数据
+                    if (!credential.id || !credential.rawId || !credential.response) {
+                        throw new Error('凭证数据不完整');
                     }
                     
                     showNotification('正在保存凭证...', 'info');
@@ -207,15 +448,25 @@ var PasskeyManager = (function() {
                     };
                     
                     // 发送到服务器验证
+                    var verifyTimeout = setTimeout(function() {
+                        reject(new Error('验证超时，请重试'));
+                    }, 15000);
+                    
                     return fetch(PASSKEY_ACTION_URL + '?do=register-verify', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify(data)
+                    }).then(function(response) {
+                        clearTimeout(verifyTimeout);
+                        return response;
                     });
                 })
                 .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('服务器响应错误: ' + response.status);
+                    }
                     return response.json();
                 })
                 .then(function(data) {
@@ -227,13 +478,24 @@ var PasskeyManager = (function() {
                     resolve(data.data);
                 })
                 .catch(function(error) {
+                    clearTimeout(fetchTimeout);
                     console.error('Passkey register error:', error);
                     
                     var errorMessage = error.message;
+                    
+                    // 友好的错误信息
                     if (error.name === 'NotAllowedError') {
-                        errorMessage = '注册已取消或超时';
+                        errorMessage = '注册已取消或超时，请重试';
                     } else if (error.name === 'InvalidStateError') {
                         errorMessage = '此设备已经注册过 Passkey';
+                    } else if (error.name === 'NotSupportedError') {
+                        errorMessage = '您的设备不支持此认证方式';
+                    } else if (error.name === 'SecurityError') {
+                        errorMessage = '安全错误：请确保网站使用 HTTPS 连接';
+                    } else if (error.name === 'AbortError') {
+                        errorMessage = '操作被中断，请重试';
+                    } else if (error.message && error.message.indexOf('timeout') > -1) {
+                        errorMessage = '操作超时，请检查网络连接后重试';
                     }
                     
                     showNotification('注册失败: ' + errorMessage, 'error');
@@ -243,21 +505,48 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 使用 Passkey 登录
+     * 使用 Passkey 登录（增强版）
      */
     function login() {
         return new Promise(function(resolve, reject) {
+            // 检查浏览器支持
             if (!isSupported()) {
-                showNotification('您的浏览器不支持 WebAuthn', 'error');
+                var browserName = BrowserDetector.getBrowserName();
+                var platformName = BrowserDetector.getPlatformName();
+                var errorMsg = '您的浏览器（' + browserName + ' on ' + platformName + '）不支持 WebAuthn';
+                
+                if (BrowserDetector.isSafari() && !BrowserDetector.isIOS()) {
+                    errorMsg += '，请确保使用 Safari 13 或更高版本';
+                } else if (BrowserDetector.isFirefox()) {
+                    errorMsg += '，请确保使用 Firefox 60 或更高版本';
+                }
+                
+                showNotification(errorMsg, 'error');
                 reject(new Error('Browser not supported'));
+                return;
+            }
+            
+            // 检查网络连接
+            var networkStatus = checkNetwork();
+            if (!networkStatus.connected) {
+                showNotification(networkStatus.error, 'error');
+                reject(new Error('Network disconnected'));
                 return;
             }
             
             showNotification('正在准备登录...', 'info');
             
             // 获取登录选项
+            var fetchTimeout = setTimeout(function() {
+                reject(new Error('请求超时，请检查网络连接'));
+            }, 15000);
+            
             fetch(PASSKEY_ACTION_URL + '?do=login-options')
                 .then(function(response) {
+                    clearTimeout(fetchTimeout);
+                    if (!response.ok) {
+                        throw new Error('服务器响应错误: ' + response.status);
+                    }
                     return response.json();
                 })
                 .then(function(data) {
@@ -267,15 +556,37 @@ var PasskeyManager = (function() {
                     
                     var options = data.data;
                     
+                    // 验证服务器返回的数据
+                    if (!options.challenge) {
+                        throw new Error('服务器返回的数据不完整');
+                    }
+                    
                     // 转换 challenge 为 ArrayBuffer
                     var publicKeyOptions = {
                         challenge: base64urlDecode(options.challenge),
-                        timeout: options.timeout,
+                        timeout: options.timeout || 60000,
                         rpId: options.rpId,
-                        userVerification: options.userVerification
+                        userVerification: options.userVerification || 'preferred'
                     };
                     
-                    showNotification('请使用您的设备完成身份验证...', 'info');
+                    // 如果有 allowCredentials，也要处理
+                    if (options.allowCredentials && options.allowCredentials.length > 0) {
+                        publicKeyOptions.allowCredentials = options.allowCredentials.map(function(cred) {
+                            return {
+                                type: cred.type,
+                                id: base64urlDecode(cred.id)
+                            };
+                        });
+                    }
+                    
+                    // Safari 特殊处理
+                    if (BrowserDetector.isSafari()) {
+                        showNotification('您正在使用 Safari 浏览器,请在弹出窗口中完成验证', 'info');
+                    } else if (BrowserDetector.isFirefox()) {
+                        showNotification('您正在使用 Firefox 浏览器，请使用您的设备完成身份验证', 'info');
+                    } else {
+                        showNotification('请使用您的设备完成身份验证...', 'info');
+                    }
                     
                     // 获取凭证
                     return navigator.credentials.get({
@@ -285,6 +596,11 @@ var PasskeyManager = (function() {
                 .then(function(assertion) {
                     if (!assertion) {
                         throw new Error('认证失败');
+                    }
+                    
+                    // 验证断言数据
+                    if (!assertion.id || !assertion.response) {
+                        throw new Error('认证数据不完整');
                     }
                     
                     showNotification('正在验证身份...', 'info');
@@ -304,15 +620,25 @@ var PasskeyManager = (function() {
                     };
                     
                     // 发送到服务器验证
+                    var verifyTimeout = setTimeout(function() {
+                        reject(new Error('验证超时，请重试'));
+                    }, 15000);
+                    
                     return fetch(PASSKEY_ACTION_URL + '?do=login-verify', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
                         },
                         body: JSON.stringify(data)
+                    }).then(function(response) {
+                        clearTimeout(verifyTimeout);
+                        return response;
                     });
                 })
                 .then(function(response) {
+                    if (!response.ok) {
+                        throw new Error('服务器响应错误: ' + response.status);
+                    }
                     return response.json();
                 })
                 .then(function(data) {
@@ -344,16 +670,24 @@ var PasskeyManager = (function() {
                     resolve(data.data);
                 })
                 .catch(function(error) {
+                    clearTimeout(fetchTimeout);
                     console.error('Passkey login error:', error);
                     
                     // 显示友好的错误信息
                     var errorMessage = error.message;
+                    
                     if (error.name === 'NotAllowedError') {
-                        errorMessage = '认证已取消或超时';
+                        errorMessage = '认证已取消或超时，请重试';
                     } else if (error.name === 'InvalidStateError') {
                         errorMessage = '您的设备尚未注册通行秘钥';
                     } else if (error.name === 'NotSupportedError') {
                         errorMessage = '您的设备不支持此认证方式';
+                    } else if (error.name === 'SecurityError') {
+                        errorMessage = '安全错误：请确保网站使用 HTTPS 连接';
+                    } else if (error.name === 'AbortError') {
+                        errorMessage = '操作被中断，请重试';
+                    } else if (error.message && error.message.indexOf('timeout') > -1) {
+                        errorMessage = '操作超时，请检查网络连接后重试';
                     }
                     
                     showNotification('登录失败: ' + errorMessage, 'error');
@@ -363,7 +697,7 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 显示注册表单，收集用户信息
+     * 显示注册表单，收集用户信息（增强表单验证）
      */
     function showRegisterForm() {
         return new Promise(function(resolve, reject) {
@@ -374,28 +708,57 @@ var PasskeyManager = (function() {
             
             // 创建表单容器
             var formBox = document.createElement('div');
-            formBox.style.cssText = 'background:#fff;padding:30px;border-radius:8px;' +
-                'box-shadow:0 4px 20px rgba(0,0,0,0.15);max-width:400px;width:90%;animation:scaleIn 0.3s ease;';
+            formBox.style.cssText = 'background:#fff;padding:30px;border-radius:12px;' +
+                'box-shadow:0 4px 20px rgba(0,0,0,0.15);max-width:420px;width:90%;animation:scaleIn 0.3s ease;';
             
             formBox.innerHTML = 
-                '<h3 style="margin:0 0 20px;color:#1f2937;font-size:20px;">创建新账户</h3>' +
-                '<p style="color:#6b7280;margin-bottom:20px;font-size:14px;">请填写以下信息以完成注册</p>' +
+                '<h3 style="margin:0 0 20px;color:#1f2937;font-size:20px;display:flex;align-items:center;gap:10px;">' +
+                    '<span style="color:#4f46e5;">' + SVGIcons.fingerprint + '</span>' +
+                    '创建新账户' +
+                '</h3>' +
+                '<p style="color:#6b7280;margin-bottom:20px;font-size:14px;line-height:1.5;">请填写以下信息以完成注册。所有字段仅用于创建您的账户，不会与第三方共享。</p>' +
                 '<form id="passkey-register-form">' +
                     '<div style="margin-bottom:15px;">' +
-                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;">用户名 *</label>' +
-                        '<input type="text" name="username" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:14px;" placeholder="请输入用户名">' +
+                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;font-size:14px;">用户名 *</label>' +
+                        '<input type="text" name="username" required ' +
+                            'style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;' +
+                            'transition:border-color 0.2s ease;" ' +
+                            'placeholder="3-20个字符，仅限字母数字下划线" ' +
+                            'pattern="[a-zA-Z0-9_]{3,20}" ' +
+                            'title="用户名只能包含字母、数字和下划线，长度3-20个字符">' +
+                        '<div id="username-error" style="color:#ef4444;font-size:12px;margin-top:5px;display:none;"></div>' +
                     '</div>' +
                     '<div style="margin-bottom:15px;">' +
-                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;">邮箱 *</label>' +
-                        '<input type="email" name="email" required style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:14px;" placeholder="请输入邮箱">' +
+                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;font-size:14px;">邮箱 *</label>' +
+                        '<input type="email" name="email" required ' +
+                            'style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;' +
+                            'transition:border-color 0.2s ease;" ' +
+                            'placeholder="your@email.com">' +
+                        '<div id="email-error" style="color:#ef4444;font-size:12px;margin-top:5px;display:none;"></div>' +
                     '</div>' +
                     '<div style="margin-bottom:20px;">' +
-                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;">昵称</label>' +
-                        '<input type="text" name="screenName" style="width:100%;padding:10px;border:1px solid #d1d5db;border-radius:4px;font-size:14px;" placeholder="请输入昵称（可选）">' +
+                        '<label style="display:block;margin-bottom:5px;color:#374151;font-weight:500;font-size:14px;">昵称</label>' +
+                        '<input type="text" name="screenName" ' +
+                            'style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;' +
+                            'transition:border-color 0.2s ease;" ' +
+                            'placeholder="显示名称（可选，最多30个字符）" ' +
+                            'maxlength="30">' +
+                        '<div id="screenName-error" style="color:#ef4444;font-size:12px;margin-top:5px;display:none;"></div>' +
                     '</div>' +
                     '<div style="display:flex;gap:10px;">' +
-                        '<button type="submit" style="flex:1;padding:10px;background:#3b82f6;color:white;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:500;">确认注册</button>' +
-                        '<button type="button" id="passkey-cancel-btn" style="flex:1;padding:10px;background:#e5e7eb;color:#374151;border:none;border-radius:4px;cursor:pointer;font-size:14px;font-weight:500;">取消</button>' +
+                        '<button type="submit" id="passkey-submit-btn" ' +
+                            'style="flex:1;padding:11px;background:#4f46e5;color:white;border:none;border-radius:6px;cursor:pointer;' +
+                            'font-size:14px;font-weight:500;transition:background 0.2s ease;">' +
+                            '确认注册' +
+                        '</button>' +
+                        '<button type="button" id="passkey-cancel-btn" ' +
+                            'style="flex:1;padding:11px;background:#e5e7eb;color:#374151;border:none;border-radius:6px;cursor:pointer;' +
+                            'font-size:14px;font-weight:500;transition:background 0.2s ease;">' +
+                            '取消' +
+                        '</button>' +
+                    '</div>' +
+                    '<div style="margin-top:15px;padding:10px;background:#f3f4f6;border-radius:6px;font-size:12px;color:#6b7280;">' +
+                        '<strong style="color:#374151;">提示：</strong>注册后您将使用设备的生物识别功能（如指纹、面容）进行安全登录。' +
                     '</div>' +
                 '</form>';
             
@@ -407,58 +770,181 @@ var PasskeyManager = (function() {
                 var style = document.createElement('style');
                 style.id = 'passkey-form-styles';
                 style.textContent = '@keyframes fadeIn{from{opacity:0}to{opacity:1}}' +
-                    '@keyframes scaleIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}}';
+                    '@keyframes fadeOut{from{opacity:1}to{opacity:0}}' +
+                    '@keyframes scaleIn{from{opacity:0;transform:scale(0.9)}to{opacity:1;transform:scale(1)}}' +
+                    'input:focus{outline:none;border-color:#4f46e5!important;}' +
+                    'button:hover{opacity:0.9;}';
                 document.head.appendChild(style);
             }
             
+            // 获取表单元素
+            var form = document.getElementById('passkey-register-form');
+            var usernameInput = form.querySelector('[name="username"]');
+            var emailInput = form.querySelector('[name="email"]');
+            var screenNameInput = form.querySelector('[name="screenName"]');
+            var submitBtn = document.getElementById('passkey-submit-btn');
+            var cancelBtn = document.getElementById('passkey-cancel-btn');
+            
+            // 实时验证函数
+            function validateField(input, validatorFunc, errorElementId) {
+                var result = validatorFunc(input.value);
+                var errorDiv = document.getElementById(errorElementId);
+                
+                if (!result.valid) {
+                    input.style.borderColor = '#ef4444';
+                    errorDiv.textContent = result.error;
+                    errorDiv.style.display = 'block';
+                    return false;
+                } else {
+                    input.style.borderColor = '#10b981';
+                    errorDiv.style.display = 'none';
+                    return true;
+                }
+            }
+            
+            // 添加实时验证
+            usernameInput.addEventListener('blur', function() {
+                validateField(this, Validator.username, 'username-error');
+            });
+            
+            usernameInput.addEventListener('input', function() {
+                if (this.value.length > 0) {
+                    validateField(this, Validator.username, 'username-error');
+                } else {
+                    this.style.borderColor = '#d1d5db';
+                    document.getElementById('username-error').style.display = 'none';
+                }
+            });
+            
+            emailInput.addEventListener('blur', function() {
+                validateField(this, Validator.email, 'email-error');
+            });
+            
+            emailInput.addEventListener('input', function() {
+                if (this.value.length > 0) {
+                    validateField(this, Validator.email, 'email-error');
+                } else {
+                    this.style.borderColor = '#d1d5db';
+                    document.getElementById('email-error').style.display = 'none';
+                }
+            });
+            
+            screenNameInput.addEventListener('blur', function() {
+                validateField(this, Validator.screenName, 'screenName-error');
+            });
+            
             // 取消按钮
-            document.getElementById('passkey-cancel-btn').onclick = function() {
+            cancelBtn.onclick = function() {
                 overlay.style.animation = 'fadeOut 0.3s ease';
                 setTimeout(function() {
-                    document.body.removeChild(overlay);
+                    if (document.body.contains(overlay)) {
+                        document.body.removeChild(overlay);
+                    }
                 }, 300);
                 reject(new Error('用户取消注册'));
             };
             
             // 表单提交
-            document.getElementById('passkey-register-form').onsubmit = function(e) {
+            form.onsubmit = function(e) {
                 e.preventDefault();
                 
-                var formData = new FormData(e.target);
-                var userInfo = {
-                    username: formData.get('username').trim(),
-                    email: formData.get('email').trim(),
-                    screenName: formData.get('screenName').trim() || formData.get('username').trim()
-                };
+                // 验证所有字段
+                var usernameValid = validateField(usernameInput, Validator.username, 'username-error');
+                var emailValid = validateField(emailInput, Validator.email, 'email-error');
+                var screenNameValid = validateField(screenNameInput, Validator.screenName, 'screenName-error');
                 
-                // 简单验证
-                if (!userInfo.username || !userInfo.email) {
-                    showNotification('请填写必填项', 'error');
+                if (!usernameValid || !emailValid || !screenNameValid) {
+                    showNotification('请检查表单中的错误', 'error');
                     return;
                 }
                 
-                document.body.removeChild(overlay);
+                // 获取验证后的值
+                var usernameResult = Validator.username(usernameInput.value);
+                var emailResult = Validator.email(emailInput.value);
+                var screenNameResult = Validator.screenName(screenNameInput.value);
+                
+                var userInfo = {
+                    username: usernameResult.value,
+                    email: emailResult.value,
+                    screenName: screenNameResult.value || usernameResult.value
+                };
+                
+                // 禁用提交按钮
+                submitBtn.disabled = true;
+                submitBtn.textContent = '正在处理...';
+                submitBtn.style.opacity = '0.6';
+                
+                if (document.body.contains(overlay)) {
+                    document.body.removeChild(overlay);
+                }
                 resolve(userInfo);
             };
+            
+            // 聚焦到第一个输入框
+            setTimeout(function() {
+                usernameInput.focus();
+            }, 300);
         });
     }
     
     /**
-     * 使用用户信息注册 Passkey
+     * 使用用户信息注册 Passkey（增强版）
      */
     function registerWithInfo(userInfo) {
         return new Promise(function(resolve, reject) {
+            // 前端验证用户信息
+            var usernameResult = Validator.username(userInfo.username);
+            if (!usernameResult.valid) {
+                showNotification('用户名验证失败: ' + usernameResult.error, 'error');
+                reject(new Error(usernameResult.error));
+                return;
+            }
+            
+            var emailResult = Validator.email(userInfo.email);
+            if (!emailResult.valid) {
+                showNotification('邮箱验证失败: ' + emailResult.error, 'error');
+                reject(new Error(emailResult.error));
+                return;
+            }
+            
+            var screenNameResult = Validator.screenName(userInfo.screenName);
+            if (!screenNameResult.valid) {
+                showNotification('昵称验证失败: ' + screenNameResult.error, 'error');
+                reject(new Error(screenNameResult.error));
+                return;
+            }
+            
+            // 检查网络连接
+            var networkStatus = checkNetwork();
+            if (!networkStatus.connected) {
+                showNotification(networkStatus.error, 'error');
+                reject(new Error('Network disconnected'));
+                return;
+            }
+            
             showNotification('正在创建账户...', 'info');
             
             // 获取注册选项（带用户信息）
+            var fetchTimeout = setTimeout(function() {
+                reject(new Error('请求超时，请检查网络连接'));
+            }, 15000);
+            
             fetch(PASSKEY_ACTION_URL + '?do=register-options', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(userInfo)
+                body: JSON.stringify({
+                    username: usernameResult.value,
+                    email: emailResult.value,
+                    screenName: screenNameResult.value || usernameResult.value
+                })
             })
             .then(function(response) {
+                clearTimeout(fetchTimeout);
+                if (!response.ok) {
+                    throw new Error('服务器响应错误: ' + response.status);
+                }
                 return response.json();
             })
             .then(function(data) {
@@ -467,6 +953,11 @@ var PasskeyManager = (function() {
                 }
                 
                 var options = data.data;
+                
+                // 验证服务器返回的数据
+                if (!options.challenge || !options.user || !options.rp) {
+                    throw new Error('服务器返回的数据不完整');
+                }
                 
                 // 转换为 WebAuthn 格式
                 var publicKeyOptions = {
@@ -478,12 +969,22 @@ var PasskeyManager = (function() {
                         displayName: options.user.displayName
                     },
                     pubKeyCredParams: options.pubKeyCredParams,
-                    timeout: options.timeout,
-                    attestation: options.attestation,
-                    authenticatorSelection: options.authenticatorSelection
+                    timeout: options.timeout || 60000,
+                    attestation: options.attestation || 'none',
+                    authenticatorSelection: options.authenticatorSelection || {}
                 };
                 
-                showNotification('请使用您的设备完成身份验证...', 'info');
+                // Safari 特殊处理
+                if (BrowserDetector.isSafari()) {
+                    showNotification('您正在使用 Safari 浏览器，请在弹出窗口中完成验证', 'info');
+                    if (!publicKeyOptions.authenticatorSelection.userVerification) {
+                        publicKeyOptions.authenticatorSelection.userVerification = 'preferred';
+                    }
+                } else if (BrowserDetector.isFirefox()) {
+                    showNotification('您正在使用 Firefox 浏览器，请使用您的设备完成身份验证', 'info');
+                } else {
+                    showNotification('请使用您的设备完成身份验证...', 'info');
+                }
                 
                 // 创建凭证
                 return navigator.credentials.create({
@@ -493,6 +994,11 @@ var PasskeyManager = (function() {
             .then(function(credential) {
                 if (!credential) {
                     throw new Error('创建凭证失败');
+                }
+                
+                // 验证凭证数据
+                if (!credential.id || !credential.rawId || !credential.response) {
+                    throw new Error('凭证数据不完整');
                 }
                 
                 showNotification('正在完成注册...', 'info');
@@ -509,15 +1015,25 @@ var PasskeyManager = (function() {
                 };
                 
                 // 发送到服务器验证
+                var verifyTimeout = setTimeout(function() {
+                    reject(new Error('验证超时，请重试'));
+                }, 15000);
+                
                 return fetch(PASSKEY_ACTION_URL + '?do=register-verify', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify(data)
+                }).then(function(response) {
+                    clearTimeout(verifyTimeout);
+                    return response;
                 });
             })
             .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('服务器响应错误: ' + response.status);
+                }
                 return response.json();
             })
             .then(function(data) {
@@ -531,19 +1047,31 @@ var PasskeyManager = (function() {
                 setTimeout(function() {
                     if (data.data.redirect) {
                         window.location.href = data.data.redirect;
+                    } else {
+                        window.location.reload();
                     }
                 }, 1500);
                 
                 resolve(data.data);
             })
             .catch(function(error) {
+                clearTimeout(fetchTimeout);
                 console.error('Passkey register error:', error);
                 
                 var errorMessage = error.message;
+                
                 if (error.name === 'NotAllowedError') {
-                    errorMessage = '注册已取消或超时';
+                    errorMessage = '注册已取消或超时，请重试';
                 } else if (error.name === 'InvalidStateError') {
                     errorMessage = '此设备已经注册过 Passkey';
+                } else if (error.name === 'NotSupportedError') {
+                    errorMessage = '您的设备不支持此认证方式';
+                } else if (error.name === 'SecurityError') {
+                    errorMessage = '安全错误：请确保网站使用 HTTPS 连接';
+                } else if (error.name === 'AbortError') {
+                    errorMessage = '操作被中断，请重试';
+                } else if (error.message && error.message.indexOf('timeout') > -1) {
+                    errorMessage = '操作超时，请检查网络连接后重试';
                 }
                 
                 showNotification('注册失败: ' + errorMessage, 'error');
@@ -573,17 +1101,23 @@ var PasskeyManager = (function() {
         register: register,
         login: login,
         checkConditionalMediation: checkConditionalMediation,
-        showNotification: showNotification
+        showNotification: showNotification,
+        // 暴露工具类和检测器（供高级用户使用）
+        BrowserDetector: BrowserDetector,
+        Validator: Validator,
+        SVGIcons: SVGIcons
     };
 })();
 
-// 自动初始化 - 优化适配 Typecho 登录页面
+// 自动初始化 - 优化适配 Typecho 登录页面（增强版）
 (function() {
     'use strict';
     
     // 检查是否支持 WebAuthn
     if (!PasskeyManager.isSupported()) {
-        console.warn('Passkey: WebAuthn is not supported in this browser');
+        console.warn('Passkey: WebAuthn is not supported in this browser (' + 
+            PasskeyManager.BrowserDetector.getBrowserName() + ' on ' + 
+            PasskeyManager.BrowserDetector.getPlatformName() + ')');
         return;
     }
     
@@ -637,17 +1171,31 @@ var PasskeyManager = (function() {
         button.type = 'button';
         button.id = 'passkey-login-btn';
         button.className = 'btn btn-l w-100';
-        button.style.cssText = 'width:100%;padding:10px;font-size:14px;cursor:pointer;' +
-            'background:#4f46e5;color:white;border:1px solid #4338ca;border-radius:4px;' +
-            'transition:all 0.2s ease;';
-        button.innerHTML = '🔐 使用 Passkey 登录';
+        button.style.cssText = 'width:100%;padding:10px 15px;font-size:14px;cursor:pointer;' +
+            'background:#4f46e5;color:white;border:1px solid #4338ca;border-radius:6px;' +
+            'transition:all 0.2s ease;display:flex;align-items:center;justify-content:center;gap:8px;';
+        
+        // 创建按钮内容（SVG + 文字）
+        var buttonIcon = document.createElement('span');
+        buttonIcon.innerHTML = PasskeyManager.SVGIcons.fingerprint;
+        buttonIcon.style.cssText = 'display:flex;align-items:center;';
+        
+        var buttonText = document.createElement('span');
+        buttonText.textContent = '使用 Passkey 登录';
+        
+        button.appendChild(buttonIcon);
+        button.appendChild(buttonText);
         
         // 按钮悬停效果
         button.onmouseover = function() {
             this.style.background = '#4338ca';
+            this.style.transform = 'translateY(-1px)';
+            this.style.boxShadow = '0 4px 12px rgba(79, 70, 229, 0.3)';
         };
         button.onmouseout = function() {
             this.style.background = '#4f46e5';
+            this.style.transform = 'translateY(0)';
+            this.style.boxShadow = 'none';
         };
         
         container.appendChild(divider);
@@ -662,16 +1210,31 @@ var PasskeyManager = (function() {
         
         // 绑定点击事件
         button.addEventListener('click', function() {
-            button.disabled = true;
-            button.innerHTML = '🔐 正在登录...';
+            if (button.disabled) return;
             
-            PasskeyManager.login().finally(function() {
+            button.disabled = true;
+            
+            // 显示加载状态
+            buttonIcon.innerHTML = '<span style="display:inline-block;animation:passkeyRotate 1s linear infinite;">' + 
+                                   PasskeyManager.SVGIcons.loading + '</span>';
+            buttonText.textContent = '正在登录...';
+            button.style.opacity = '0.8';
+            
+            PasskeyManager.login().catch(function(error) {
+                // 登录失败时恢复按钮状态
+                console.error('Login failed:', error);
+            }).finally(function() {
+                // 恢复按钮状态
                 button.disabled = false;
-                button.innerHTML = '🔐 使用 Passkey 登录';
+                buttonIcon.innerHTML = PasskeyManager.SVGIcons.fingerprint;
+                buttonText.textContent = '使用 Passkey 登录';
+                button.style.opacity = '1';
             });
         });
         
-        console.log('Passkey: Auto injection completed');
+        console.log('Passkey: Auto injection completed (' + 
+            PasskeyManager.BrowserDetector.getBrowserName() + ' on ' + 
+            PasskeyManager.BrowserDetector.getPlatformName() + ')');
     }
     
     // 等待 DOM 完全加载

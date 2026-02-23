@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author little-gt
- * @version 1.0.2
+ * @version 1.0.3
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,12 +27,39 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.0.2';
+    const VERSION = '1.0.3';
     /**
      * 激活插件方法
      */
     public static function activate()
     {
+        // 检查必需的 PHP 扩展
+        $requiredExtensions = array(
+            'openssl' => 'OpenSSL 扩展（用于加密签名验证）',
+            'json' => 'JSON 扩展（用于数据解析）',
+            'session' => 'Session 扩展（用于会话管理）',
+            'mbstring' => 'Mbstring 扩展（用于字符串处理）'
+        );
+        
+        $missingExtensions = array();
+        foreach ($requiredExtensions as $ext => $description) {
+            if (!extension_loaded($ext)) {
+                $missingExtensions[] = $ext . ' - ' . $description;
+            }
+        }
+        
+        if (!empty($missingExtensions)) {
+            throw new \Typecho\Plugin\Exception(
+                '缺少必需的 PHP 扩展，请安装以下扩展后重试：<br>' . 
+                implode('<br>', $missingExtensions)
+            );
+        }
+        
+        // 检查 PHP 版本（要求 PHP 7.0+）
+        if (version_compare(PHP_VERSION, '7.0.0', '<')) {
+            throw new \Typecho\Plugin\Exception('此插件需要 PHP 7.0 或更高版本');
+        }
+        
         // 创建数据表
         $db = \Typecho\Db::get();
         $prefix = $db->getPrefix();
@@ -61,15 +88,17 @@ class Plugin implements PluginInterface
                 last_used INTEGER DEFAULT NULL
             )";
         } else {
+            // MySQL: 使用 VARCHAR 而不是 TEXT + 前缀索引，避免截断导致的冲突
+            // credential_id 是 base64 编码的，通常 200-400 字节，使用 VARCHAR(1024) 足够
             $sql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_credentials (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
-                credential_id TEXT NOT NULL,
+                credential_id VARCHAR(1024) NOT NULL,
                 public_key TEXT NOT NULL,
                 counter INT DEFAULT 0,
                 created_at INT NOT NULL,
                 last_used INT DEFAULT NULL,
-                UNIQUE KEY unique_credential (credential_id(255))
+                UNIQUE KEY unique_credential (credential_id)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
         }
         

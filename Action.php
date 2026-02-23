@@ -13,12 +13,18 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 }
 
 /**
- * Passkey Action 处理类
+ * Passkey Action 处理类 - 安全加固版
  */
 class Action extends Widget implements ActionInterface
 {
     private $db;
     private $prefix;
+    
+    // 安全常量
+    const MAX_ATTEMPTS_PER_HOUR = 20;      // 每小时最大尝试次数
+    const MAX_ATTEMPTS_PER_IP = 10;        // 每个 IP 每小时最大尝试次数
+    const SESSION_TIMEOUT = 300;            // Session 超时时间（5分钟）
+    const MAX_CREDENTIAL_ID_LENGTH = 1024; // 凭证 ID 最大长度
     
     public function __construct($request, $response, $params = NULL)
     {
@@ -35,6 +41,31 @@ class Action extends Widget implements ActionInterface
         $this->response->setContentType('application/json');
         
         $action = $this->request->get('do');
+        
+        // 验证 action 参数（白名单）
+        $allowedActions = array(
+            'register-options',
+            'register-verify',
+            'login-options',
+            'login-verify',
+            'list',
+            'delete',
+            'login-logs'
+        );
+        
+        if (!in_array($action, $allowedActions, true)) {
+            $this->error('Invalid action');
+            return;
+        }
+        
+        // 速率限制检查（针对敏感操作）
+        $sensitiveActions = array('register-verify', 'login-verify', 'register-options', 'login-options');
+        if (in_array($action, $sensitiveActions, true)) {
+            if (!$this->checkRateLimit()) {
+                $this->error('请求过于频繁，请稍后再试');
+                return;
+            }
+        }
         
         switch ($action) {
             case 'register-options':
@@ -93,6 +124,13 @@ class Action extends Widget implements ActionInterface
             
             // 获取POST数据（用户提供的注册信息）
             $postData = json_decode(file_get_contents('php://input'), true);
+            
+            // 验证 JSON 解析是否成功
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                $this->error('无效的请求数据');
+                return;
+            }
+            
             $userName = isset($postData['username']) ? trim($postData['username']) : '';
             $userEmail = isset($postData['email']) ? trim($postData['email']) : '';
             $displayName = isset($postData['screenName']) ? trim($postData['screenName']) : '';
@@ -103,9 +141,15 @@ class Action extends Widget implements ActionInterface
                 return;
             }
             
-            // 验证用户名格式（只允许字母数字下划线）
-            if (!preg_match('/^[a-zA-Z0-9_]{3,32}$/', $userName)) {
-                $this->error('用户名只能包含字母、数字和下划线，长度 3-32 个字符');
+            // 验证用户名长度
+            if (strlen($userName) < 3 || strlen($userName) > 32) {
+                $this->error('用户名长度必须在 3-32 个字符之间');
+                return;
+            }
+            
+            // 验证用户名格式（只允许字母数字下划线，且不能以数字开头）
+            if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/', $userName)) {
+                $this->error('用户名只能包含字母、数字和下划线，必须以字母开头');
                 return;
             }
             
@@ -115,25 +159,42 @@ class Action extends Widget implements ActionInterface
                 return;
             }
             
-            // 检查用户名是否已存在
+            // 验证邮箱长度
+            if (strlen($userEmail) > 200) {
+                $this->error('邮箱地址过长');
+                return;
+            }
+            
+            // 验证昵称长度
+            if (strlen($displayName) > 100) {
+                $this->error('昵称过长');
+                return;
+            }
+            
+            // 过滤昵称中的危险字符（防止 XSS 和数据库注入）
+            if (!empty($displayName)) {
+                // 移除控制字符和不可见字符
+                $displayName = preg_replace('/[\x00-\x1F\x7F]/u', '', $displayName);
+                // 移除 HTML 标签
+                $displayName = strip_tags($displayName);
+                // 重新 trim 以移除可能产生的空格
+                $displayName = trim($displayName);
+            }
+            
+            // 检查用户名或邮箱是否已存在
             $existingUser = $this->db->fetchRow($this->db->select()
                 ->from($this->prefix . 'users')
                 ->where('name = ?', $userName)
                 ->limit(1));
             
-            if ($existingUser) {
-                $this->error('用户名已存在，请选择其他用户名');
-                return;
-            }
-            
-            // 检查邮箱是否已存在
             $existingEmail = $this->db->fetchRow($this->db->select()
                 ->from($this->prefix . 'users')
                 ->where('mail = ?', $userEmail)
                 ->limit(1));
             
-            if ($existingEmail) {
-                $this->error('邮箱已被使用，请使用其他邮箱');
+            if ($existingUser || $existingEmail) {
+                // 使用统一错误信息
+                $this->error('该用户名或邮箱不可用，请选择其他用户名或邮箱。');
                 return;
             }
             
@@ -142,7 +203,7 @@ class Action extends Widget implements ActionInterface
             }
             
             // 允许未登录用户注册
-            $tempUserId = 'passuser_' . substr(md5($userName . time()), 0, 16);
+            $tempUserId = 'passuser_' . bin2hex(random_bytes(8));
         } else {
             // 已登录用户添加凭证
             $tempUserId = $user->uid;
@@ -154,6 +215,12 @@ class Action extends Widget implements ActionInterface
         $rpName = $plugin->rpName ?: 'My Website';
         $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
         
+        // 验证 rpId 格式
+        if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
+            $this->error('无效的 RP ID 格式');
+            return;
+        }
+        
         // 生成 challenge
         $challenge = $this->generateChallenge();
         
@@ -162,6 +229,7 @@ class Action extends Widget implements ActionInterface
         $_SESSION['passkey_register_challenge'] = $challenge;
         $_SESSION['passkey_register_user_id'] = $isLoggedIn ? $user->uid : null;
         $_SESSION['passkey_register_is_new_user'] = !$isLoggedIn;
+        $this->setSessionTimestamp('passkey_register_challenge');
         
         // 如果是新用户，保存注册信息
         if (!$isLoggedIn) {
@@ -209,6 +277,13 @@ class Action extends Widget implements ActionInterface
             return;
         }
         
+        // 检查 session 超时
+        if (!$this->checkSessionTimeout('passkey_register_challenge')) {
+            $this->error('Session 已超时，请重新开始注册');
+            return;
+        }
+        
+        $challenge = $_SESSION['passkey_register_challenge'];
         $isNewUser = isset($_SESSION['passkey_register_is_new_user']) && $_SESSION['passkey_register_is_new_user'];
         
         // 如果不是新用户，检查登录状态
@@ -226,20 +301,66 @@ class Action extends Widget implements ActionInterface
         
         $data = json_decode(file_get_contents('php://input'), true);
         
+        // 验证 JSON 解析是否成功
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->error('无效的请求数据');
+            return;
+        }
+        
         if (!$data || !isset($data['id']) || !isset($data['rawId']) || !isset($data['response'])) {
             $this->error('Invalid data');
             return;
         }
         
-        // 验证 response
-        $response = $data['response'];
+        // 验证数据类型
+        if (!is_string($data['id']) || !is_string($data['rawId']) || !is_array($data['response'])) {
+            $this->error('Invalid data type');
+            return;
+        }
         
-        // 这里应该进行完整的 WebAuthn 验证
-        // 为了简化，我们只做基本验证
+        // 验证 rawId 长度（防止缓冲区溢出）
+        if (strlen($data['rawId']) > 2048) {
+            $this->error('Invalid credential ID length');
+            return;
+        }
         
-        $credentialId = base64_encode($data['rawId']);
-        $publicKey = isset($response['publicKey']) ? $response['publicKey'] : 
-                     (isset($response['attestationObject']) ? $response['attestationObject'] : '');
+        // 获取配置
+        $options = Options::alloc();
+        $plugin = $options->plugin('Passkey');
+        $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
+        
+        // 验证 RP ID
+        if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
+            $this->error('无效的 RP ID');
+            return;
+        }
+        
+        // 构造 origin
+        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $origin = $protocol . '://' . $_SERVER['HTTP_HOST'];
+        
+        // 使用 WebAuthn 类进行完整验证
+        try {
+            $verificationResult = WebAuthn::verifyRegistration(
+                $data['response'],
+                $challenge,
+                $rpId,
+                $origin
+            );
+            
+            $credentialId = $verificationResult['credentialId'];
+            $publicKey = $verificationResult['publicKey'];
+            $counter = $verificationResult['counter'];
+            
+            // 验证凭证 ID
+            if (!$this->validateCredentialId($credentialId)) {
+                throw new \Exception('Invalid credential ID format');
+            }
+            
+        } catch (\Exception $e) {
+            $this->error('WebAuthn 验证失败: ' . $e->getMessage());
+            return;
+        }
         
         // 如果是新用户，先创建账户
         if ($isNewUser) {
@@ -277,12 +398,14 @@ class Action extends Widget implements ActionInterface
         }
         
         // 保存凭证
+        // 直接插入，依赖数据库 UNIQUE 约束防止竞态条件
+        // 不再手动检查凭证是否存在，让数据库原子性地处理
         try {
             $this->db->query($this->db->insert($this->prefix . 'passkey_credentials')->rows(array(
                 'user_id' => $userId,
                 'credential_id' => $credentialId,
                 'public_key' => $publicKey,
-                'counter' => 0,
+                'counter' => $counter,
                 'created_at' => time()
             )));
             
@@ -310,8 +433,16 @@ class Action extends Widget implements ActionInterface
             }
             
             $this->success(array('message' => 'Passkey registered successfully'));
-        } catch (Exception $e) {
-            $this->error('Failed to save credential: ' . $e->getMessage());
+        } catch (\Exception $e) {
+            // 捕获数据库唯一键冲突异常（竞态条件导致的重复插入）
+            $errorMessage = $e->getMessage();
+            if (strpos($errorMessage, 'Duplicate') !== false || 
+                strpos($errorMessage, 'unique') !== false ||
+                strpos($errorMessage, 'UNIQUE') !== false) {
+                $this->error('此凭证已经注册过');
+            } else {
+                $this->error('Failed to save credential: ' . $errorMessage);
+            }
         }
     }
     
@@ -325,12 +456,19 @@ class Action extends Widget implements ActionInterface
         
         $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
         
+        // 验证 RP ID
+        if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
+            $this->error('无效的 RP ID');
+            return;
+        }
+        
         // 生成 challenge
         $challenge = $this->generateChallenge();
         
         // 保存 challenge 到 session
         session_start();
         $_SESSION['passkey_login_challenge'] = $challenge;
+        $this->setSessionTimestamp('passkey_login_challenge');
         
         $publicKey = array(
             'challenge' => $challenge,
@@ -354,16 +492,47 @@ class Action extends Widget implements ActionInterface
             return;
         }
         
+        // 检查 session 超时
+        if (!$this->checkSessionTimeout('passkey_login_challenge')) {
+            $this->error('Session 已超时，请重新开始登录');
+            return;
+        }
+        
         $challenge = $_SESSION['passkey_login_challenge'];
         
         $data = json_decode(file_get_contents('php://input'), true);
+        
+        // 验证 JSON 解析是否成功
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            $this->error('无效的请求数据');
+            return;
+        }
         
         if (!$data || !isset($data['id']) || !isset($data['rawId']) || !isset($data['response'])) {
             $this->error('数据格式错误');
             return;
         }
         
-        $credentialId = base64_encode($data['rawId']);
+        // 验证数据类型
+        if (!is_string($data['id']) || !is_string($data['rawId']) || !is_array($data['response'])) {
+            $this->error('Invalid data type');
+            return;
+        }
+
+        // 验证 rawId 长度（防止缓冲区溢出）
+        if (strlen($data['rawId']) > 2048) {
+            $this->error('Invalid credential ID length');
+            return;
+        }
+        
+        // rawId 已经是 base64 编码的字符串，直接使用
+        $credentialId = $data['rawId'];
+        
+        // 验证凭证 ID
+        if (!$this->validateCredentialId($credentialId)) {
+            $this->error('Invalid credential ID format');
+            return;
+        }
         
         // 查找凭证
         try {
@@ -392,8 +561,34 @@ class Action extends Widget implements ActionInterface
                 return;
             }
             
-            // 这里应该进行完整的 WebAuthn 验证
-            // 为了简化，我们只做基本验证
+            // 获取配置
+            $options = Options::alloc();
+            $plugin = $options->plugin('Passkey');
+            $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
+            
+            // 构造 origin
+            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+            $origin = $protocol . '://' . $_SERVER['HTTP_HOST'];
+            
+            // 使用 WebAuthn 类进行完整验证
+            try {
+                $verificationResult = WebAuthn::verifyAuthentication(
+                    $data['response'],
+                    $challenge,
+                    $rpId,
+                    $origin,
+                    $credential['public_key'],
+                    (int)$credential['counter']
+                );
+                
+                $newCounter = $verificationResult['counter'];
+                
+            } catch (\Exception $e) {
+                // 记录失败的登录尝试
+                $this->logLoginActivity($credential['user_id'], $credential['id'], $challenge, 'failed');
+                $this->error('WebAuthn 验证失败: ' . $e->getMessage());
+                return;
+            }
             
             // 获取用户信息
             $user = $this->db->fetchRow($this->db->select()
@@ -414,14 +609,22 @@ class Action extends Widget implements ActionInterface
                 return;
             }
             
-            // 更新凭证最后使用时间（兼容旧版本数据表）
+            // 更新凭证计数器和最后使用时间
             try {
+                $updateData = array('counter' => $newCounter);
+                
+                // 尝试更新 last_used 字段（兼容旧版本）
+                try {
+                    $updateData['last_used'] = time();
+                } catch (\Exception $e) {
+                    // 字段不存在，忽略
+                }
+                
                 $this->db->query($this->db->update($this->prefix . 'passkey_credentials')
-                    ->rows(array('last_used' => time()))
+                    ->rows($updateData)
                     ->where('id = ?', $credential['id']));
             } catch (\Exception $e) {
-                // 如果字段不存在，忽略错误（兼容旧版本）
-                error_log('Failed to update last_used: ' . $e->getMessage());
+                error_log('Failed to update credential: ' . $e->getMessage());
             }
             
             // 记录登录日志
@@ -446,7 +649,7 @@ class Action extends Widget implements ActionInterface
     /**
      * 记录登录活动
      */
-    private function logLoginActivity($userId, $credentialId, $challenge)
+    private function logLoginActivity($userId, $credentialId, $challenge, $status = 'success')
     {
         try {
             $this->db->query($this->db->insert($this->prefix . 'passkey_login_logs')
@@ -457,7 +660,7 @@ class Action extends Widget implements ActionInterface
                     'ip_address' => $this->request->getIp(),
                     'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
                     'login_time' => time(),
-                    'status' => 'success'
+                    'status' => $status
                 )));
         } catch (\Exception $e) {
             // 记录失败不影响登录流程
@@ -594,6 +797,104 @@ class Action extends Widget implements ActionInterface
         elseif (strpos($ua, 'iOS') !== false || strpos($ua, 'iPhone') !== false || strpos($ua, 'iPad') !== false) $os = 'iOS';
         
         return $browser . ' / ' . $os;
+    }
+    
+    /**
+     * 检查速率限制
+     */
+    private function checkRateLimit()
+    {
+        session_start();
+        $now = time();
+        $ip = $this->request->getIp();
+        
+        // 清理过期的记录
+        if (!isset($_SESSION['passkey_rate_limit'])) {
+            $_SESSION['passkey_rate_limit'] = array();
+        }
+        
+        $rateLimit = &$_SESSION['passkey_rate_limit'];
+        
+        // 清理1小时前的记录
+        foreach ($rateLimit as $key => $data) {
+            if ($data['time'] < $now - 3600) {
+                unset($rateLimit[$key]);
+            }
+        }
+        
+        // 检查全局限制
+        $globalCount = 0;
+        $ipCount = 0;
+        
+        foreach ($rateLimit as $data) {
+            $globalCount++;
+            if ($data['ip'] === $ip) {
+                $ipCount++;
+            }
+        }
+        
+        if ($globalCount >= self::MAX_ATTEMPTS_PER_HOUR) {
+            error_log('Passkey: Rate limit exceeded (global)');
+            return false;
+        }
+        
+        if ($ipCount >= self::MAX_ATTEMPTS_PER_IP) {
+            error_log('Passkey: Rate limit exceeded for IP: ' . $ip);
+            return false;
+        }
+        
+        // 记录本次请求
+        $rateLimit[] = array(
+            'time' => $now,
+            'ip' => $ip
+        );
+        
+        return true;
+    }
+    
+    /**
+     * 验证 session 超时
+     */
+    private function checkSessionTimeout($sessionKey) {
+        if (!isset($_SESSION[$sessionKey . '_time'])) {
+            return false;
+        }
+        
+        $elapsed = time() - $_SESSION[$sessionKey . '_time'];
+        if ($elapsed > self::SESSION_TIMEOUT) {
+            unset($_SESSION[$sessionKey]);
+            unset($_SESSION[$sessionKey . '_time']);
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * 设置 session 时间戳
+     */
+    private function setSessionTimestamp($sessionKey) {
+        $_SESSION[$sessionKey . '_time'] = time();
+    }
+    
+    /**
+     * 验证凭证 ID 格式
+     */
+    private function validateCredentialId($credentialId) {
+        if (!is_string($credentialId)) {
+            return false;
+        }
+        
+        if (strlen($credentialId) === 0 || strlen($credentialId) > self::MAX_CREDENTIAL_ID_LENGTH) {
+            return false;
+        }
+        
+        // Base64 编码检查
+        if (!preg_match('/^[A-Za-z0-9+\/=]+$/', $credentialId)) {
+            return false;
+        }
+        
+        return true;
     }
     
     /**

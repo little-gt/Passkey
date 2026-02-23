@@ -1,8 +1,8 @@
 # Passkey 登录插件 for Typecho
 
-一个为 Typecho 博客系统提供 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。支持登录历史审计、完整数据管理和优雅的网页内通知系统。
+一个为 Typecho 博客系统提供 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。支持登录历史审计、完整数据管理、企业级安全配置和优雅的网页内通知系统。
 
-![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.2-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3--rc1-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
@@ -885,6 +885,41 @@ DESC typecho_passkey_login_logs;
 ```
 
 ## 📜 更新日志
+
+### v2.0.0 (2026-02-23)
+
+**重大更新 - 企业级安全增强：**
+- 🔐 完整的 WebAuthn 验证：实现服务器端签名验证（ES256、RS256），使用 PHP OpenSSL
+- 🛡️ 安全配置管理：插件管理界面新增 6 项安全配置，支持可视化调整
+- ⚙️ 可配置安全参数：Challenge 超时、注册/登录频率限制、严格模式开关
+- 📊 智能速率限制：基于 Session 的防暴力破解机制，独立计数
+- 🔍 签名计数器验证：防止克隆的认证器攻击（Clone Detection）
+- 📏 数据长度限制：防止恶意超大数据导致的 DoS 攻击
+- 🔒 CBOR 安全解析：最大嵌套深度 10 层，数组/对象最大 1000 元素
+- 🌐 Origin 严格验证：支持宽松模式（开发）和严格模式（生产）
+- 📝 安全日志系统：记录所有验证失败事件，便于审计
+
+**浏览器兼容性增强：**
+- 🔧 智能浏览器检测：自动识别 Chrome、Firefox、Safari、Edge 及版本
+- 🍎 Safari 适配：Safari < 14 自动跳过不支持的 `authenticatorAttachment` 选项
+- 🦊 Firefox 版本检查：拒绝 Firefox < 60，显示友好升级提示
+- 🎯 条件特性支持：根据浏览器版本动态调整 WebAuthn 选项
+- 💬 浏览器特定错误提示：根据不同浏览器显示针对性的错误信息
+
+**安全文档与测试：**
+- 📚 新增 `SECURITY.md`：详细的安全机制说明和配置最佳实践
+- ✅ 新增 `TESTING.md`：完整的安全测试清单和测试用例
+- 📖 配置文档：开发环境、标准生产、高安全生产三套推荐配置
+
+**默认配置（推荐）：**
+```
+Challenge 超时: 300 秒
+注册频率限制: 5 次/300 秒
+登录频率限制: 10 次/300 秒
+严格计数器: 警告模式（开发友好）
+严格 Origin: 宽松模式（支持 localhost）
+安全日志: 启用
+```
 
 ### v1.0.2 (2026-02-22)
 

@@ -1,6 +1,6 @@
 /**
  * Passkey Plugin Styles
- * 只用于登录页面，不影响 Typecho 后台
+ * 优化的登录页面样式，不影响 Typecho 后台
  */
 
 /* Passkey 登录容器 */
@@ -13,41 +13,50 @@
 /* Passkey 登录按钮 */
 #passkey-login-btn {
     width: 100%;
-    padding: 10px;
+    padding: 10px 15px;
     background: #4f46e5;
     border: 1px solid #4338ca;
-    border-radius: 0;
+    border-radius: 6px;
     color: white;
     font-size: 14px;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
     position: relative;
     overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 #passkey-login-btn:hover {
     background: #4338ca;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
 }
 
 #passkey-login-btn:active {
     background: #3730a3;
+    transform: translateY(0);
 }
 
 #passkey-login-btn:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none !important;
 }
 
-#passkey-login-btn::before {
-    content: '🔐';
-    margin-right: 8px;
-    font-size: 16px;
+/* SVG 图标样式 */
+#passkey-login-btn svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
 }
 
 /* Passkey 状态消息 */
 #passkey-status {
     padding: 12px 20px;
-    border-radius: 0;
+    border-radius: 6px;
     margin: 15px 0;
     animation: passkeySlideIn 0.3s ease;
 }
@@ -75,7 +84,17 @@
     }
 }
 
-/* 加载动画 */
+/* 旋转加载动画（用于 SVG 图标） */
+@keyframes passkeyRotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* 传统加载器（保留兼容性） */
 .passkey-loading {
     display: inline-block;
     width: 14px;
@@ -83,21 +102,20 @@
     border: 2px solid rgba(255, 255, 255, 0.3);
     border-radius: 50%;
     border-top-color: white;
-    animation: passkeypin 0.6s linear infinite;
+    animation: passkeyRotate 0.6s linear infinite;
     margin-right: 8px;
     vertical-align: middle;
-}
-
-@keyframes passkeypin {
-    to {
-        transform: rotate(360deg);
-    }
 }
 
 /* 响应式设计 */
 @media (max-width: 768px) {
     #passkey-login-btn {
         font-size: 13px;
-        padding: 9px;
+        padding: 9px 12px;
+    }
+    
+    #passkey-login-btn svg {
+        width: 16px;
+        height: 16px;
     }
 }
