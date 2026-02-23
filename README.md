@@ -6,12 +6,12 @@
 
 ![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
-![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP-7.0+-777BB4?style=for-the-badge&logo=php&logoColor=white)
 ![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
 
-参与讨论：https://forum.typecho.org/viewtopic.php?p=62488#p62488
+参与讨论：https://forum.typecho.org/viewtopic.php?p=62489#p62489
 
 技术细节：https://blog.csdn.net/qq_43011259/article/details/158292076
 
