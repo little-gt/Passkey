@@ -437,9 +437,11 @@ var PasskeyManager = (function() {
                     showNotification('正在保存凭证...', 'info');
                     
                     // 准备要发送的数据
+                    // 注意：id 是 base64url 编码，rawId 是 ArrayBuffer
+                    // 为了一致性，我们统一使用 id（它已是字符串）
                     var data = {
                         id: credential.id,
-                        rawId: arrayBufferToBase64(credential.rawId),
+                        rawId: credential.id,  // 直接使用 id（base64url）
                         type: credential.type,
                         response: {
                             clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
@@ -606,9 +608,11 @@ var PasskeyManager = (function() {
                     showNotification('正在验证身份...', 'info');
                     
                     // 准备要发送的数据
+                    // 注意：id 是 base64url 编码，rawId 是 ArrayBuffer
+                    // 为了一致性，我们统一使用 id（它已是字符串）
                     var data = {
                         id: assertion.id,
-                        rawId: arrayBufferToBase64(assertion.rawId),
+                        rawId: assertion.id,  // 直接使用 id（base64url）
                         type: assertion.type,
                         response: {
                             authenticatorData: arrayBufferToBase64(assertion.response.authenticatorData),

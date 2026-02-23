@@ -24,7 +24,7 @@ class Action extends Widget implements ActionInterface
     const MAX_ATTEMPTS_PER_HOUR = 20;      // 每小时最大尝试次数
     const MAX_ATTEMPTS_PER_IP = 10;        // 每个 IP 每小时最大尝试次数
     const SESSION_TIMEOUT = 300;            // Session 超时时间（5分钟）
-    const MAX_CREDENTIAL_ID_LENGTH = 1024; // 凭证 ID 最大长度
+    const MAX_CREDENTIAL_ID_LENGTH = 512;  // 凭证 ID 最大长度
     
     public function __construct($request, $response, $params = NULL)
     {
@@ -38,9 +38,20 @@ class Action extends Widget implements ActionInterface
      */
     public function action()
     {
-        $this->response->setContentType('application/json');
+        // 捕获所有输出，确保只返回 JSON
+        ob_start();
         
-        $action = $this->request->get('do');
+        // 设置错误处理，防止 PHP 警告影响 JSON 输出
+        $previousErrorHandler = set_error_handler(function($errno, $errstr, $errfile, $errline) {
+            // 记录错误但不输出
+            error_log("Passkey Error [$errno]: $errstr in $errfile on line $errline");
+            return true; // 不执行 PHP 内部错误处理
+        });
+        
+        try {
+            $this->response->setContentType('application/json');
+            
+            $action = $this->request->get('do');
         
         // 验证 action 参数（白名单）
         $allowedActions = array(
@@ -91,6 +102,22 @@ class Action extends Widget implements ActionInterface
                 break;
             default:
                 $this->error('Invalid action');
+        }
+        } catch (\Exception $e) {
+            // 捕获所有未处理的异常
+            ob_clean(); // 清空输出缓冲区
+            error_log('Passkey Action Exception: ' . $e->getMessage());
+            $this->error('系统错误: ' . $e->getMessage());
+        } finally {
+            // 恢复错误处理器
+            if (isset($previousErrorHandler)) {
+                set_error_handler($previousErrorHandler);
+            }
+            // 清理并丢弃可能的警告输出
+            $unwantedOutput = ob_get_clean();
+            if (!empty($unwantedOutput)) {
+                error_log('Passkey: Unwanted output captured: ' . substr($unwantedOutput, 0, 200));
+            }
         }
     }
     
@@ -525,8 +552,8 @@ class Action extends Widget implements ActionInterface
             return;
         }
         
-        // rawId 已经是 base64 编码的字符串，直接使用
-        $credentialId = $data['rawId'];
+        // rawId 是 base64url 编码，需要转换为标准 base64
+        $credentialId = $this->base64url_to_base64($data['rawId']);
         
         // 验证凭证 ID
         if (!$this->validateCredentialId($credentialId)) {
@@ -875,6 +902,19 @@ class Action extends Widget implements ActionInterface
      */
     private function setSessionTimestamp($sessionKey) {
         $_SESSION[$sessionKey . '_time'] = time();
+    }
+    
+    /**
+     * 转换 base64url 为标准 base64
+     */
+    private function base64url_to_base64($base64url) {
+        $base64 = strtr($base64url, '-_', '+/');
+        // 添加填充
+        $padding = strlen($base64) % 4;
+        if ($padding) {
+            $base64 .= str_repeat('=', 4 - $padding);
+        }
+        return $base64;
     }
     
     /**

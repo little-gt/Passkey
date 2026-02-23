@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author little-gt
- * @version 1.0.3
+ * @version 1.0.3.rc2
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.0.3';
+    const VERSION = '1.0.3.rc2';
     /**
      * 激活插件方法
      */
@@ -89,17 +89,18 @@ class Plugin implements PluginInterface
             )";
         } else {
             // MySQL: 使用 VARCHAR 而不是 TEXT + 前缀索引，避免截断导致的冲突
-            // credential_id 是 base64 编码的，通常 200-400 字节，使用 VARCHAR(1024) 足够
+            // credential_id 是 base64 编码的，通常 86-172 字符，使用 VARCHAR(512) 足够
+            // 对于 utf8mb4，VARCHAR(512) = 512 * 4 = 2048 字节，在 MySQL 索引限制 (3072 字节) 之内
             $sql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_credentials (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 user_id INT NOT NULL,
-                credential_id VARCHAR(1024) NOT NULL,
+                credential_id VARCHAR(512) NOT NULL,
                 public_key TEXT NOT NULL,
                 counter INT DEFAULT 0,
                 created_at INT NOT NULL,
                 last_used INT DEFAULT NULL,
                 UNIQUE KEY unique_credential (credential_id)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         }
         
         try {
@@ -143,7 +144,7 @@ class Plugin implements PluginInterface
                 status VARCHAR(20) DEFAULT 'success',
                 INDEX idx_user_id (user_id),
                 INDEX idx_login_time (login_time)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4";
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         }
         
         try {
@@ -168,7 +169,7 @@ class Plugin implements PluginInterface
     private static function upgradeDatabase($db, $prefix, $adapter)
     {
         try {
-            // 检查 passkey_credentials 表是否有 last_used 字段
+            // 1. 检查 passkey_credentials 表是否有 last_used 字段
             if ($adapter == 'Pgsql') {
                 $checkSql = "SELECT column_name FROM information_schema.columns WHERE table_name='" . $prefix . "passkey_credentials' AND column_name='last_used'";
             } else if ($adapter == 'SQLite') {
@@ -203,6 +204,34 @@ class Plugin implements PluginInterface
                     $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INT DEFAULT NULL";
                 }
                 $db->query($alterSql);
+            }
+            
+            // 2. 检查并修复 credential_id 字段长度（仅 MySQL）
+            if ($adapter != 'Pgsql' && $adapter != 'SQLite') {
+                try {
+                    $columnInfo = $db->fetchAll("SHOW FULL COLUMNS FROM " . $prefix . "passkey_credentials WHERE Field = 'credential_id'");
+                    if (!empty($columnInfo)) {
+                        $columnType = $columnInfo[0]['Type'];
+                        // 如果是 varchar(1024)，修改为 varchar(512)
+                        if (stripos($columnType, 'varchar(1024)') !== false) {
+                            // 先检查现有数据是否都在 512 字符以内
+                            $maxLength = $db->fetchRow($db->select('MAX(LENGTH(credential_id)) as max_len')
+                                ->from($prefix . 'passkey_credentials'));
+                            
+                            $currentMaxLen = isset($maxLength['max_len']) ? (int)$maxLength['max_len'] : 0;
+                            
+                            if ($currentMaxLen <= 512) {
+                                // 安全修改字段长度
+                                $db->query("ALTER TABLE " . $prefix . "passkey_credentials MODIFY COLUMN credential_id VARCHAR(512) NOT NULL");
+                                error_log('Passkey: Successfully updated credential_id column length to VARCHAR(512)');
+                            } else {
+                                error_log('Passkey: credential_id column has data longer than 512 characters, skipping migration');
+                            }
+                        }
+                    }
+                } catch (\Exception $e) {
+                    error_log('Passkey: Failed to check/update credential_id column: ' . $e->getMessage());
+                }
             }
         } catch (\Exception $e) {
             // 升级失败不影响插件激活，只记录错误
