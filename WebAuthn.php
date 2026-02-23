@@ -111,7 +111,11 @@ class WebAuthn
         }
         
         if (!self::verifyOrigin($clientData['origin'], $origin)) {
-            throw new \Exception('Origin mismatch: expected ' . $origin . ', got ' . $clientData['origin']);
+            // 详细信息记录日志，避免向客户端泄露配置信息
+            error_log('[Passkey][SECURITY] Origin mismatch - Expected: ' . $origin . 
+                     ', Got: ' . $clientData['origin'] . 
+                     ' | Timestamp: ' . date('Y-m-d H:i:s'));
+            throw new \Exception('Origin verification failed');
         }
         
         // 5. 解码 attestationObject（添加长度限制）
@@ -153,49 +157,99 @@ class WebAuthn
         }
         
         
-        // 6. 验证 RPID hash
+        // 6. 验证 RPID hash（SHA-256哈希必须是32字节）
         $rpIdHash = substr($authData, 0, 32);
         $expectedRpIdHash = hash('sha256', $rpId, true);
         
+        // 使用时序安全比较防止时序攻击
         if (!hash_equals($rpIdHash, $expectedRpIdHash)) {
             throw new \Exception('RP ID hash mismatch');
         }
         
-        // 7. 验证 flags
+        // 7. 验证 flags（详细解析所有标志位）
         $flags = ord($authData[32]);
-        $userPresent = ($flags & 0x01) !== 0;
-        $userVerified = ($flags & 0x04) !== 0;
-        $attestedCredentialData = ($flags & 0x40) !== 0;
+        $userPresent = ($flags & 0x01) !== 0;      // UP: User Present
+        $userVerified = ($flags & 0x04) !== 0;     // UV: User Verified
+        $backupEligible = ($flags & 0x08) !== 0;   // BE: Backup Eligible
+        $backupState = ($flags & 0x10) !== 0;      // BS: Backup State
+        $attestedCredentialData = ($flags & 0x40) !== 0; // AT: Attested Credential Data
+        $extensionData = ($flags & 0x80) !== 0;    // ED: Extension Data
         
+        // User Present 标志是必需的（WebAuthn规范要求）
         if (!$userPresent) {
             throw new \Exception('User not present');
         }
         
+        // 注册时必须包含凭证数据
         if (!$attestedCredentialData) {
             throw new \Exception('Attested credential data flag not set');
         }
         
-        // 8. 提取 counter
-        $counter = unpack('N', substr($authData, 33, 4))[1];
+        // 8. 提取并验证 counter（签名计数器，防止克隆攻击）
+        $counterBytes = substr($authData, 33, 4);
+        if (strlen($counterBytes) !== 4) {
+            throw new \Exception('Invalid counter data');
+        }
         
-        // 验证 counter 范围
+        $counter = unpack('N', $counterBytes)[1];
+        
+        // Counter在注册时通常为0，但也可能不为0
+        // 验证范围（32位无符号整数）
         if ($counter < 0 || $counter > 0xFFFFFFFF) {
             throw new \Exception('Invalid counter value');
         }
         
-        // 9. 提取公钥
+        // 9. 验证 authenticatorData 基本结构完整性
+        // rpIdHash(32) + flags(1) + counter(4) = 37 字节是最小长度
+        // 如果有 AT 标志，还需要 AAGUID(16) + credIdLen(2) + credId + publicKey
+        $minExpectedLength = 37;
+        if ($attestedCredentialData) {
+            $minExpectedLength += 18; // AAGUID(16) + credIdLen(2) 的最小长度
+        }
+        
+        if (strlen($authData) < $minExpectedLength) {
+            throw new \Exception('Authenticator data too short for declared flags');
+        }
+        
+        // 10. 提取公钥和凭证ID
         $publicKeyData = self::extractPublicKey($authData);
         
-        // 验证公钥数据
+        // 11. 验证公钥数据完整性
         if (!$publicKeyData || !isset($publicKeyData['publicKey']) || !isset($publicKeyData['credentialId'])) {
             throw new \Exception('Failed to extract public key');
+        }
+        
+        // 12. 验证凭证ID长度合理性（防止异常大的ID）
+        $credentialIdDecoded = base64_decode($publicKeyData['credentialId'], true);
+        if ($credentialIdDecoded === false) {
+            throw new \Exception('Invalid credential ID encoding');
+        }
+        
+        $credIdLength = strlen($credentialIdDecoded);
+        if ($credIdLength < 16 || $credIdLength > 1024) {
+            throw new \Exception('Credential ID length out of acceptable range');
+        }
+        
+        // 13. 验证公钥格式（确保是有效的COSE key）
+        $publicKeyDecoded = base64_decode($publicKeyData['publicKey'], true);
+        if ($publicKeyDecoded === false || strlen($publicKeyDecoded) < 32) {
+            throw new \Exception('Invalid public key encoding');
+        }
+        
+        // 14. 验证 AAGUID 格式（16字节的认证器标识符）
+        if (isset($publicKeyData['aaguid']) && strlen($publicKeyData['aaguid']) !== 32) {
+            // AAGUID是16字节，hex编码后应该是32字符
+            throw new \Exception('Invalid AAGUID format');
         }
         
         return array(
             'publicKey' => $publicKeyData['publicKey'],
             'credentialId' => $publicKeyData['credentialId'],
             'counter' => $counter,
-            'userVerified' => $userVerified
+            'userVerified' => $userVerified,
+            'backupEligible' => $backupEligible,
+            'backupState' => $backupState,
+            'aaguid' => isset($publicKeyData['aaguid']) ? $publicKeyData['aaguid'] : null
         );
     }
     
@@ -397,7 +451,11 @@ class WebAuthn
         }
         
         if (!self::verifyOrigin($clientData['origin'], $origin)) {
-            throw new \Exception('Origin mismatch');
+            // 详细信息记录日志
+            error_log('[Passkey][SECURITY] Origin verification failed during authentication - ' .
+                     'Expected: ' . $origin . ', Got: ' . $clientData['origin'] . 
+                     ' | Timestamp: ' . date('Y-m-d H:i:s'));
+            throw new \Exception('Origin verification failed');
         }
         
         // 5. 解码 authenticatorData（添加长度限制）
@@ -481,6 +539,10 @@ class WebAuthn
     
     /**
      * 从 authenticatorData 中提取公钥
+     * 
+     * @param string $authData 认证器数据
+     * @return array 包含公钥信息的数组
+     * @throws \Exception 当数据无效时
      */
     private static function extractPublicKey($authData)
     {
@@ -493,6 +555,7 @@ class WebAuthn
         // credentialId: credentialIdLength bytes
         // credentialPublicKey: COSE 格式
         
+        // 验证最小长度（37 + 16 + 2 = 55字节）
         if (strlen($authData) < 55) {
             throw new \Exception('AuthData too short for credential data');
         }
@@ -501,6 +564,9 @@ class WebAuthn
         
         // 提取 AAGUID (16 bytes)
         $aaguid = substr($authData, $offset, 16);
+        if (strlen($aaguid) !== 16) {
+            throw new \Exception('Failed to extract AAGUID');
+        }
         $offset += 16;
         
         // 提取 credentialId 长度
@@ -508,20 +574,32 @@ class WebAuthn
             throw new \Exception('AuthData too short for credential ID length');
         }
         
-        $credIdLength = unpack('n', substr($authData, $offset, 2))[1];
-        $offset += 2;
-        
-        // 验证 credentialId 长度合理性
-        if ($credIdLength === 0 || $credIdLength > 1024) {
-            throw new \Exception('Invalid credential ID length');
+        $credIdLengthBytes = substr($authData, $offset, 2);
+        if (strlen($credIdLengthBytes) !== 2) {
+            throw new \Exception('Failed to extract credential ID length');
         }
         
-        // 提取 credentialId
+        $credIdLength = unpack('n', $credIdLengthBytes)[1];
+        $offset += 2;
+        
+        // 验证 credentialId 长度合理性（防止整数溢出攻击）
+        if ($credIdLength === 0) {
+            throw new \Exception('Credential ID length cannot be zero');
+        }
+        
+        if ($credIdLength > 1024) {
+            throw new \Exception('Invalid credential ID length: too large');
+        }
+        
+        // 验证剩余数据足够
         if ($offset + $credIdLength > strlen($authData)) {
             throw new \Exception('AuthData too short for credential ID');
         }
-        
+        // 提取 credentialId
         $credentialId = substr($authData, $offset, $credIdLength);
+        if (strlen($credentialId) !== $credIdLength) {
+            throw new \Exception('Failed to extract credential ID');
+        }
         $offset += $credIdLength;
         
         // 提取公钥 (COSE 格式)
@@ -531,9 +609,24 @@ class WebAuthn
         
         $publicKeyData = substr($authData, $offset);
         
-        // 验证公钥长度
-        if (strlen($publicKeyData) === 0 || strlen($publicKeyData) > 8192) {
-            throw new \Exception('Invalid public key length');
+        // 验证公钥长度（COSE公钥至少需要32字节）
+        if (strlen($publicKeyData) < 32) {
+            throw new \Exception('Public key data too short');
+        }
+        
+        if (strlen($publicKeyData) > 8192) {
+            throw new \Exception('Invalid public key length: too large');
+        }
+        
+        // 尝试解析COSE公钥以验证其格式
+        try {
+            $parsedKey = self::decodeCOSEKey($publicKeyData);
+            if (!$parsedKey || !is_array($parsedKey)) {
+                throw new \Exception('Invalid COSE key format');
+            }
+        } catch (\Exception $e) {
+            error_log('[Passkey][ERROR] Failed to parse COSE key: ' . $e->getMessage());
+            throw new \Exception('Failed to parse public key');
         }
         
         return array(
@@ -576,10 +669,11 @@ class WebAuthn
                 case -257: // RS256
                     return self::verifyRS256($data, $signature, $publicKey);
                 default:
-                    throw new \Exception('Unsupported algorithm: ' . $publicKey['alg']);
+                    error_log('[Passkey][ERROR] Unsupported algorithm: ' . $publicKey['alg']);
+                    throw new \Exception('Unsupported signature algorithm');
             }
         } catch (\Exception $e) {
-            error_log('Signature verification error: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Signature verification error: ' . $e->getMessage());
             return false;
         }
     }
@@ -635,7 +729,8 @@ class WebAuthn
         $result = openssl_verify($data, $signature, $pem, OPENSSL_ALGO_SHA256);
         
         if ($result === -1) {
-            throw new \Exception('OpenSSL error: ' . openssl_error_string());
+            error_log('[Passkey][ERROR] OpenSSL ES256 verification error: ' . openssl_error_string());
+            throw new \Exception('Signature verification failed');
         }
         
         return $result === 1;
@@ -671,7 +766,8 @@ class WebAuthn
         $result = openssl_verify($data, $signature, $pem, OPENSSL_ALGO_SHA256);
         
         if ($result === -1) {
-            throw new \Exception('OpenSSL error: ' . openssl_error_string());
+            error_log('[Passkey][ERROR] OpenSSL RS256 verification error: ' . openssl_error_string());
+            throw new \Exception('Signature verification failed');
         }
         
         return $result === 1;
@@ -734,13 +830,30 @@ class WebAuthn
     
     /**
      * 编码 DER 整数
+     * 
+     * @param string $value 二进制字符串形式的整数
+     * @return string DER 编码的整数
+     * @throws \Exception 当输入无效时
      */
     private static function encodeDERInteger($value)
     {
+        // 验证输入
+        if (!is_string($value)) {
+            throw new \Exception('DER integer value must be a string');
+        }
+        
+        if (strlen($value) === 0) {
+            throw new \Exception('DER integer value cannot be empty');
+        }
+        
         // 移除前导零，但保留一个如果最高位是 1
         $value = ltrim($value, "\x00");
         
-        if (ord($value[0]) & 0x80) {
+        // 如果所有字节都被移除了，表示值为0
+        if (strlen($value) === 0) {
+            $value = "\x00";
+        } elseif (ord($value[0]) & 0x80) {
+            // 如果最高位是1，需要添加一个前导零（保证是正数）
             $value = "\x00" . $value;
         }
         
@@ -774,21 +887,59 @@ class WebAuthn
     
     /**
      * 编码 DER 长度
+     * 
+     * @param int $length 长度值
+     * @return string DER 编码的长度
+     * @throws \Exception 当长度无效时
      */
     private static function encodeDERLength($length)
     {
+        // 验证输入
+        if (!is_int($length) || $length < 0) {
+            throw new \Exception('DER length must be a non-negative integer');
+        }
+        
+        // DER 规范：长度字段的最大值
+        // 根据 X.690 标准，长度的长度字段最多 127 字节，但实际实现中通常限制为 4 字节
+        // 这意味着最大可编码长度为 2^32-1 (约 4GB)
+        if ($length > 0xFFFFFFFF) {
+            throw new \Exception('DER length exceeds maximum (2^32-1)');
+        }
+        
+        // 短形式：0-127
         if ($length < 128) {
             return chr($length);
         }
         
+        // 长形式：需要多个字节表示
         $encoded = '';
         $temp = $length;
+        
         while ($temp > 0) {
             $encoded = chr($temp & 0xff) . $encoded;
             $temp >>= 8;
         }
         
-        return chr(0x80 | strlen($encoded)) . $encoded;
+        $encodedLength = strlen($encoded);
+        
+        // DER 规范：长度的长度字段必须是最小编码
+        // 第一个字节不能是 0x00（除非只有一个字节）
+        if ($encodedLength > 1 && ord($encoded[0]) === 0x00) {
+            throw new \Exception('DER length encoding is not minimal');
+        }
+        
+        // 实际限制：长度字段最多 4 字节（支持到 2^32-1）
+        if ($encodedLength > 4) {
+            throw new \Exception('DER length encoding too long (maximum 4 bytes)');
+        }
+        
+        // 长形式第一个字节：0x80 | 长度的字节数
+        // 根据 X.690，0x80-0xFF 表示长形式，低 7 位表示后续字节数
+        if ($encodedLength > 127) {
+            throw new \Exception('DER length of length exceeds maximum (127)');
+        }
+        
+        return chr(0x80 | $encodedLength) . $encoded;
     }
     
     /**
@@ -812,7 +963,8 @@ class WebAuthn
         
         // 只支持 EC2 (2) 和 RSA (3)
         if ($result['kty'] !== 2 && $result['kty'] !== 3) {
-            throw new \Exception('Unsupported key type: ' . $result['kty']);
+            error_log('[Passkey][ERROR] Unsupported key type: ' . $result['kty']);
+            throw new \Exception('Unsupported key type');
         }
         
         // alg (3): 算法（必需）
@@ -823,7 +975,8 @@ class WebAuthn
         
         // 验证算法是否在白名单中
         if (!isset(self::SUPPORTED_ALGORITHMS[$result['alg']])) {
-            throw new \Exception('Unsupported algorithm: ' . $result['alg']);
+            error_log('[Passkey][ERROR] Unsupported COSE algorithm: ' . $result['alg']);
+            throw new \Exception('Unsupported algorithm');
         }
         
         // EC2 密钥参数
@@ -925,7 +1078,23 @@ class WebAuthn
             }
             $high = unpack('N', substr($data, $offset, 4))[1];
             $low = unpack('N', substr($data, $offset + 4, 4))[1];
-            $value = ($high << 32) | $low;
+            
+            // 安全处理64位整数，防止32位系统溢出
+            // 检查是否超出PHP_INT_MAX
+            if (PHP_INT_SIZE === 8) {
+                // 64位系统，直接计算
+                $value = ($high << 32) | $low;
+                // 检查是否溢出到负数（超过PHP_INT_MAX）
+                if ($value < 0) {
+                    throw new \Exception('CBOR integer too large for PHP integer');
+                }
+            } else {
+                // 32位系统，只接受小于2^32的值
+                if ($high > 0) {
+                    throw new \Exception('CBOR 64-bit integer not supported on 32-bit PHP');
+                }
+                $value = $low;
+            }
             $offset += 8;
         } else {
             throw new \Exception('Unsupported CBOR additional info: ' . $additionalInfo);

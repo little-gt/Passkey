@@ -5,7 +5,7 @@
  */
 
 if (!defined('__TYPECHO_ROOT_DIR__')) {
-    define('__TYPECHO_ROOT_DIR__', dirname(dirname(dirname(dirname(__FILE__)))));
+    exit;
 }
 
 require_once __TYPECHO_ROOT_DIR__ . '/var/Typecho/Common.php';
@@ -23,7 +23,7 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.0.3.rc5'; // 与 Plugin.php 中的版本号保持一致
+$pluginVersion = '1.0.4'; // 与 Plugin.php 中的版本号保持一致
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">

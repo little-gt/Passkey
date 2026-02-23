@@ -1007,9 +1007,10 @@ var PasskeyManager = (function() {
                 showNotification('正在完成注册...', 'info');
                 
                 // 准备要发送的数据
+                // 注意：使用 credential.id（Base64URL 格式）保持与其他函数一致
                 var data = {
                     id: credential.id,
-                    rawId: arrayBufferToBase64(credential.rawId),
+                    rawId: credential.id,  // 直接使用 id（base64url）
                     type: credential.type,
                     response: {
                         clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),

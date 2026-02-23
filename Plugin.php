@@ -18,8 +18,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 为 Typecho 提供基于WebAuthn的无密码登录功能，支持FIDO2认证器和平台内置生物识别，提升网站安全性和用户体验。
  * 
  * @package Passkey
- * @author little-gt
- * @version 1.0.3
+ * @author GARFIELDTOM
+ * @version 1.0.4
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.0.3.rc5';
+    const VERSION = '1.0.4';
     /**
      * 激活插件方法
      */
@@ -223,19 +223,19 @@ class Plugin implements PluginInterface
                             if ($currentMaxLen <= 512) {
                                 // 安全修改字段长度
                                 $db->query("ALTER TABLE " . $prefix . "passkey_credentials MODIFY COLUMN credential_id VARCHAR(512) NOT NULL");
-                                error_log('Passkey: Successfully updated credential_id column length to VARCHAR(512)');
+                                error_log('[Passkey][INFO] Successfully updated credential_id column length to VARCHAR(512)');
                             } else {
-                                error_log('Passkey: credential_id column has data longer than 512 characters, skipping migration');
+                                error_log('[Passkey][WARNING] credential_id column has data longer than 512 characters, skipping migration');
                             }
                         }
                     }
                 } catch (\Exception $e) {
-                    error_log('Passkey: Failed to check/update credential_id column: ' . $e->getMessage());
+                    error_log('[Passkey][ERROR] Failed to check/update credential_id column: ' . $e->getMessage());
                 }
             }
         } catch (\Exception $e) {
             // 升级失败不影响插件激活，只记录错误
-            error_log('Passkey plugin upgrade failed: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Plugin upgrade failed: ' . $e->getMessage());
         }
     }
     
@@ -262,7 +262,7 @@ class Plugin implements PluginInterface
                     // 删除登录日志表
                     $db->query("DROP TABLE IF EXISTS " . $prefix . "passkey_login_logs");
                 } catch (\Exception $e) {
-                    error_log('Failed to drop Passkey tables: ' . $e->getMessage());
+                    error_log('[Passkey][ERROR] Failed to drop tables: ' . $e->getMessage());
                 }
             }
         } catch (\Exception $e) {

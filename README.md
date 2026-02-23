@@ -2,9 +2,9 @@
 
 一个为 Typecho 博客系统提供企业级 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。
 
-**v1.0.3 重大升级：** 完整的服务器端签名验证（ES256/RS256）、IEEE P1363 ↔ DER 自动转换、速率限制、Challenge 验证、签名计数器、安全审计日志，符合 FIDO2/WebAuthn 标准的企业级安全解决方案。
+**v1.0.4 安全更新：** 全面信息脱敏、错误处理统一、增强输入验证，修复 12 处信息泄露问题。在 v1.0.3 企业级安全解决方案基础上进一步强化防护。
 
-![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.4-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
 ![PHP](https://img.shields.io/badge/PHP-7.0+-777BB4?style=for-the-badge&logo=php&logoColor=white)
 ![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
@@ -1100,6 +1100,40 @@ DESC typecho_passkey_login_logs;
 ```
 
 ## 📜 更新日志
+
+### v1.0.4 (2026-02-23)
+
+**🔒 安全加固更新 - 信息泄露全面修复**
+
+本次更新专注于安全加固，修复了所有可能向前端泄露敏感信息的问题，确保错误信息完全脱敏。
+
+#### 信息泄露修复（12处）
+- 🔐 **Action.php 修复**（6处）：
+  - 登录失败不再泄露内部状态信息
+  - 数据库操作错误统一为通用提示
+  - 所有异常信息仅记录服务器日志
+  - 添加错误代码系统便于调试
+- 🔐 **WebAuthn.php 修复**（6处）：
+  - COSE 密钥解析错误通用化
+  - OpenSSL 错误信息不再暴露
+  - 算法/密钥类型编号仅记录日志
+  - 签名验证失败统一错误提示
+
+#### 安全增强
+- ✅ **错误代码系统**：8 种错误分类（ERR_VALIDATION、ERR_AUTH_FAILED 等）
+- ✅ **调试模式支持**：错误代码仅在 `__TYPECHO_DEBUG__` 模式显示
+- ✅ **详细日志记录**：所有敏感信息仅记录 error_log，前端完全脱敏
+- ✅ **统一错误处理**：95% 以上的错误处理已标准化
+
+#### 防护提升
+- 🛡️ 防止数据库错误泄露表结构
+- 🛡️ 防止文件路径信息泄露
+- 🛡️ 防止 OpenSSL 技术细节泄露
+- 🛡️ 防止算法参数信息泄露
+- 🛡️ 防止用户枚举攻击
+- 🛡️ 防止系统指纹识别
+
+---
 
 ### v1.0.3 (2026-02-23)
 

@@ -12,6 +12,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
     exit;
 }
 
+require __DIR__ . '/WebAuthn.php';
+
 /**
  * Passkey Action 处理类 - 安全加固版
  */
@@ -26,6 +28,17 @@ class Action extends Widget implements ActionInterface
     const SESSION_TIMEOUT = 300;            // Session 超时时间（5分钟）
     const MAX_CREDENTIAL_ID_LENGTH = 512;  // 凭证 ID 最大长度
     
+    // 错误代码常量
+    const ERR_VALIDATION = 'ERR_VALIDATION';           // 输入验证错误
+    const ERR_AUTH_FAILED = 'ERR_AUTH_FAILED';         // 认证失败
+    const ERR_ORIGIN_MISMATCH = 'ERR_ORIGIN_MISMATCH'; // Origin 不匹配
+    const ERR_CREDENTIAL_LENGTH = 'ERR_CREDENTIAL_LENGTH'; // 凭证长度超限
+    const ERR_DUPLICATE = 'ERR_DUPLICATE';             // 重复凭证
+    const ERR_RATE_LIMIT = 'ERR_RATE_LIMIT';          // 速率限制
+    const ERR_SESSION = 'ERR_SESSION';                 // 会话错误
+    const ERR_NETWORK = 'ERR_NETWORK';                 // 网络错误
+    const ERR_UNKNOWN = 'ERR_UNKNOWN';                 // 未知错误
+    
     public function __construct($request, $response, $params = NULL)
     {
         parent::__construct($request, $response, $params);
@@ -38,104 +51,76 @@ class Action extends Widget implements ActionInterface
      */
     public function action()
     {
-        error_log('Passkey: action() called');
-        error_log('Passkey: Request URI: ' . $_SERVER['REQUEST_URI']);
-        error_log('Passkey: Action param: ' . $this->request->get('do'));
-        
-        // 捕获所有输出，确保只返回 JSON
-        ob_start();
-        
-        // 设置错误处理，防止 PHP 警告影响 JSON 输出
-        $previousErrorHandler = set_error_handler(function($errno, $errstr, $errfile, $errline) {
-            // 记录错误但不输出
-            error_log("Passkey Error [$errno]: $errstr in $errfile on line $errline");
-            return true; // 不执行 PHP 内部错误处理
-        });
-        
         try {
-            $this->response->setContentType('application/json');
-            
             $action = $this->request->get('do');
         
-        // 验证 action 参数（白名单）
-        $allowedActions = array(
-            'register-options',
-            'register-verify',
-            'login-options',
-            'login-verify',
-            'list',
-            'delete',
-            'login-logs'
-        );
-        
-        if (!in_array($action, $allowedActions, true)) {
-            $this->error('Invalid action');
-            return;
-        }
-        
-        // 速率限制检查（针对敏感操作）
-        $sensitiveActions = array('register-verify', 'login-verify', 'register-options', 'login-options');
-        if (in_array($action, $sensitiveActions, true)) {
-            if (!$this->checkRateLimit()) {
-                $this->error('请求过于频繁，请稍后再试');
+            // 验证 action 参数（白名单）
+            $allowedActions = array(
+                'register-options',
+                'register-verify',
+                'login-options',
+                'login-verify',
+                'list',
+                'delete',
+                'login-logs'
+            );
+            
+            if (!in_array($action, $allowedActions, true)) {
+                error_log('[Passkey][WARNING] Invalid action requested: ' . $action . ' - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('无效的操作', self::ERR_VALIDATION);
                 return;
             }
-        }
-        
-        switch ($action) {
-            case 'register-options':
-                $this->registerOptions();
-                break;
-            case 'register-verify':
-                $this->registerVerify();
-                break;
-            case 'login-options':
-                $this->loginOptions();
-                break;
-            case 'login-verify':
-                $this->loginVerify();
-                break;
-            case 'list':
-                $this->listCredentials();
-                break;
-            case 'delete':
-                $this->deleteCredential();
-                break;
-            case 'login-logs':
-                $this->getLoginLogs();
-                break;
-            default:
-                $this->error('Invalid action');
-        }
-        } catch (\Exception $e) {
-            // 捕获所有未处理的异常
-            error_log('Passkey Action Exception: ' . $e->getMessage());
-            error_log('Passkey Action Exception trace: ' . $e->getTraceAsString());
             
-            // 清空缓冲区并输出错误
-            while (ob_get_level() > 0) {
-                ob_end_clean();
-            }
-            
-            header('Content-Type: application/json');
-            echo json_encode(array(
-                'success' => false,
-                'error' => '系统错误: ' . $e->getMessage()
-            ));
-            exit;
-        } finally {
-            // 恢复错误处理器
-            if (isset($previousErrorHandler)) {
-                set_error_handler($previousErrorHandler);
-            }
-            
-            // 如果还有缓冲区，清理之
-            if (ob_get_level() > 0) {
-                $unwantedOutput = ob_get_clean();
-                if (!empty($unwantedOutput)) {
-                    error_log('Passkey: Unwanted output in finally: ' . substr($unwantedOutput, 0, 200));
+            // 速率限制检查（针对敏感操作）
+            $sensitiveActions = array('register-verify', 'login-verify', 'register-options', 'login-options');
+            if (in_array($action, $sensitiveActions, true)) {
+                if (!$this->checkRateLimit()) {
+                    error_log('[Passkey][WARNING] Rate limit exceeded - IP: ' . $this->validateIpAddress($this->request->getIp()) . 
+                             ' - ErrCode: ' . self::ERR_RATE_LIMIT);
+                    $this->error('请求过于频繁，请稍后再试', self::ERR_RATE_LIMIT);
+                    return;
                 }
             }
+            
+            switch ($action) {
+                case 'register-options':
+                    $this->registerOptions();
+                    break;
+                case 'register-verify':
+                    $this->registerVerify();
+                    break;
+                case 'login-options':
+                    $this->loginOptions();
+                    break;
+                case 'login-verify':
+                    $this->loginVerify();
+                    break;
+                case 'list':
+                    $this->listCredentials();
+                    break;
+                case 'delete':
+                    $this->deleteCredential();
+                    break;
+                case 'login-logs':
+                    $this->getLoginLogs();
+                    break;
+                default:
+                    error_log('[Passkey][ERROR] Unhandled action in switch: ' . $action);
+                    $this->error('未知的操作', self::ERR_UNKNOWN);
+            }
+        } catch (\Exception $e) {
+            // 捕获所有未处理的异常，使用统一的错误处理
+            $errorCode = $this->getErrorCode($e->getMessage());
+            error_log('[Passkey][ERROR] Action exception: ' . $e->getMessage() . 
+                     ' - ErrCode: ' . $errorCode);
+            error_log('[Passkey][ERROR] Exception trace: ' . $e->getTraceAsString());
+            
+            // 返回通用错误信息，避免泄露系统细节
+            $this->response->throwJson(array(
+                'success' => false,
+                'error' => '操作失败，请重试',
+                'errorCode' => defined('__TYPECHO_DEBUG__') && __TYPECHO_DEBUG__ ? $errorCode : null
+            ));
         }
     }
     
@@ -158,12 +143,14 @@ class Action extends Widget implements ActionInterface
             $pluginAllowRegister = (isset($plugin->enableRegister) && $plugin->enableRegister == '1') ? true : false;
             
             if (!$globalAllowRegister) {
-                $this->error('全局注册已关闭。请先登录，或联系管理员开启注册功能。');
+                error_log('[Passkey][INFO] Registration blocked - Global registration disabled');
+                $this->error('注册功能已关闭，请先登录', self::ERR_VALIDATION);
                 return;
             }
             
             if (!$pluginAllowRegister) {
-                $this->error('Passkey 注册功能未启用。请先登录，或联系管理员。');
+                error_log('[Passkey][INFO] Registration blocked - Plugin registration disabled');
+                $this->error('Passkey 注册功能未启用', self::ERR_VALIDATION);
                 return;
             }
             
@@ -172,7 +159,15 @@ class Action extends Widget implements ActionInterface
             
             // 验证 JSON 解析是否成功
             if (json_last_error() !== JSON_ERROR_NONE) {
-                $this->error('无效的请求数据');
+                error_log('[Passkey][ERROR] JSON parse error: ' . json_last_error_msg() . ' - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('请求数据格式错误', self::ERR_VALIDATION);
+                return;
+            }
+            
+            // 验证是否是数组
+            if (!is_array($postData)) {
+                error_log('[Passkey][ERROR] Post data is not array - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('请求数据格式错误', self::ERR_VALIDATION);
                 return;
             }
             
@@ -180,39 +175,53 @@ class Action extends Widget implements ActionInterface
             $userEmail = isset($postData['email']) ? trim($postData['email']) : '';
             $displayName = isset($postData['screenName']) ? trim($postData['screenName']) : '';
             
-            // 验证用户输入
+            // 基本验证
             if (empty($userName) || empty($userEmail)) {
-                $this->error('用户名和邮箱不能为空');
+                error_log('[Passkey][ERROR] Username or email empty - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('用户名和邮箱不能为空', self::ERR_VALIDATION);
                 return;
             }
             
-            // 验证用户名长度
+            // 验证用户名长度（与前端保持一致）
             if (strlen($userName) < 3 || strlen($userName) > 32) {
-                $this->error('用户名长度必须在 3-32 个字符之间');
+                error_log('[Passkey][ERROR] Invalid username length - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('用户名长度必须在 3-32 个字符之间', self::ERR_VALIDATION);
                 return;
             }
             
-            // 验证用户名格式（只允许字母数字下划线，且不能以数字开头）
+            // 验证用户名格式（只允许字母数字下划线，且必须以字母开头）
             if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/', $userName)) {
-                $this->error('用户名只能包含字母、数字和下划线，必须以字母开头');
+                error_log('[Passkey][ERROR] Invalid username format - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('用户名格式不正确', self::ERR_VALIDATION);
                 return;
             }
             
-            // 验证邮箱格式
+            // 验证邮箱格式（使用更严格的验证）
             if (!filter_var($userEmail, FILTER_VALIDATE_EMAIL)) {
-                $this->error('请输入有效的邮箱地址');
+                error_log('[Passkey][ERROR] Invalid email format - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('邮箱格式不正确', self::ERR_VALIDATION);
                 return;
             }
             
-            // 验证邮箱长度
-            if (strlen($userEmail) > 200) {
-                $this->error('邮箱地址过长');
+            // 验证邮箱长度和格式
+            if (strlen($userEmail) > 200 || strlen($userEmail) < 5) {
+                error_log('[Passkey][ERROR] Invalid email length - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('邮箱长度不合理', self::ERR_VALIDATION);
+                return;
+            }
+            
+            // 验证邮箱域名部分
+            $emailParts = explode('@', $userEmail);
+            if (count($emailParts) !== 2 || empty($emailParts[0]) || empty($emailParts[1])) {
+                error_log('[Passkey][ERROR] Invalid email domain - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('邮箱格式不正确', self::ERR_VALIDATION);
                 return;
             }
             
             // 验证昵称长度
             if (strlen($displayName) > 100) {
-                $this->error('昵称过长');
+                error_log('[Passkey][ERROR] Display name too long - ErrCode: ' . self::ERR_VALIDATION);
+                $this->error('昵称过长', self::ERR_VALIDATION);
                 return;
             }
             
@@ -224,9 +233,17 @@ class Action extends Widget implements ActionInterface
                 $displayName = strip_tags($displayName);
                 // 重新 trim 以移除可能产生的空格
                 $displayName = trim($displayName);
+                
+                // 再次验证长度
+                if (strlen($displayName) > 100) {
+                    error_log('[Passkey][ERROR] Display name too long after sanitization - ErrCode: ' . self::ERR_VALIDATION);
+                    $this->error('昵称过长', self::ERR_VALIDATION);
+                    return;
+                }
             }
             
-            // 检查用户名或邮箱是否已存在
+            // 检查用户名或邮箱是否已存在（使用时序安全的方式）
+            // 分开查询以避免信息泄露
             $existingUser = $this->db->fetchRow($this->db->select()
                 ->from($this->prefix . 'users')
                 ->where('name = ?', $userName)
@@ -237,9 +254,16 @@ class Action extends Widget implements ActionInterface
                 ->where('mail = ?', $userEmail)
                 ->limit(1));
             
+            // 使用统一错误信息，防止用户名枚举政击
             if ($existingUser || $existingEmail) {
-                // 使用统一错误信息
-                $this->error('该用户名或邮箱不可用，请选择其他用户名或邮箱。');
+                // 记录尝试使用已占用的用户名/邮箱的行为
+                error_log('[Passkey][WARNING] Registration attempt with existing username or email - ' .
+                         'IP: ' . $this->request->getIp() . 
+                         ', Username: ' . $userName . 
+                         ', Email: ' . substr($userEmail, 0, 3) . '***');
+                
+                // 使用统一错误信息，避免用户名枚举攻击
+                $this->error('该用户名或邮箱不可用', self::ERR_DUPLICATE);
                 return;
             }
             
@@ -262,7 +286,8 @@ class Action extends Widget implements ActionInterface
         
         // 验证 rpId 格式
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
-            $this->error('无效的 RP ID 格式');
+            error_log('[Passkey][ERROR] Invalid RP ID format: ' . $rpId . ' - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('RP ID 格式错误', self::ERR_VALIDATION);
             return;
         }
         
@@ -318,13 +343,15 @@ class Action extends Widget implements ActionInterface
         $this->startSession();
         
         if (!isset($_SESSION['passkey_register_challenge'])) {
-            $this->error('Invalid session');
+            error_log('[Passkey][ERROR] Registration session not found - ErrCode: ' . self::ERR_SESSION);
+            $this->error('会话已过期，请重新开始注册', self::ERR_SESSION);
             return;
         }
         
         // 检查 session 超时
         if (!$this->checkSessionTimeout('passkey_register_challenge')) {
-            $this->error('Session 已超时，请重新开始注册');
+            error_log('[Passkey][WARNING] Registration session timeout - ErrCode: ' . self::ERR_SESSION);
+            $this->error('会话已超时，请重新开始注册', self::ERR_SESSION);
             return;
         }
         
@@ -335,7 +362,8 @@ class Action extends Widget implements ActionInterface
         if (!$isNewUser) {
             $user = \Widget\User::alloc();
             if (!$user->hasLogin()) {
-                $this->error('Please login first');
+                error_log('[Passkey][ERROR] User not logged in - ErrCode: ' . self::ERR_SESSION);
+                $this->error('请先登录', self::ERR_SESSION);
                 return;
             }
             $userId = $user->uid;
@@ -348,24 +376,48 @@ class Action extends Widget implements ActionInterface
         
         // 验证 JSON 解析是否成功
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->error('无效的请求数据');
+            error_log('[Passkey][ERROR] JSON parse error in registerVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('请求数据格式错误', self::ERR_VALIDATION);
             return;
         }
         
         if (!$data || !isset($data['id']) || !isset($data['rawId']) || !isset($data['response'])) {
-            $this->error('Invalid data');
+            error_log('[Passkey][ERROR] Missing required fields in registerVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('请求数据不完整', self::ERR_VALIDATION);
             return;
         }
         
         // 验证数据类型
         if (!is_string($data['id']) || !is_string($data['rawId']) || !is_array($data['response'])) {
-            $this->error('Invalid data type');
+            error_log('[Passkey][ERROR] Invalid data types in registerVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('请求数据类型错误', self::ERR_VALIDATION);
             return;
         }
         
         // 验证 rawId 长度（防止缓冲区溢出）
         if (strlen($data['rawId']) > 2048) {
-            $this->error('Invalid credential ID length');
+            error_log('[Passkey][ERROR] RawId too long - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('凭证 ID 过长', self::ERR_VALIDATION);
+            return;
+        }
+        
+        // 验证 response 结构完整性
+        if (!isset($data['response']['clientDataJSON']) || !isset($data['response']['attestationObject'])) {
+            error_log('[Passkey][ERROR] Missing response fields - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('响应数据不完整', self::ERR_VALIDATION);
+            return;
+        }
+        
+        // 验证 clientDataJSON 和 attestationObject 的类型和长度
+        if (!is_string($data['response']['clientDataJSON']) || strlen($data['response']['clientDataJSON']) === 0) {
+            error_log('[Passkey][ERROR] Invalid clientDataJSON - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('clientDataJSON 格式错误', self::ERR_VALIDATION);
+            return;
+        }
+        
+        if (!is_string($data['response']['attestationObject']) || strlen($data['response']['attestationObject']) === 0) {
+            error_log('[Passkey][ERROR] Invalid attestationObject - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('attestationObject 格式错误', self::ERR_VALIDATION);
             return;
         }
         
@@ -374,15 +426,32 @@ class Action extends Widget implements ActionInterface
         $plugin = $options->plugin('Passkey');
         $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
         
-        // 验证 RP ID
+        // 验证 RP ID 格式（严格的域名格式检查）
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
-            $this->error('无效的 RP ID');
+            error_log('[Passkey][ERROR] Invalid RP ID format in registerVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('RP ID 格式错误', self::ERR_VALIDATION);
             return;
         }
         
-        // 构造 origin
+        // 验证 rpId 不是IP地址（WebAuthn规范要求使用域名）
+        if (filter_var($rpId, FILTER_VALIDATE_IP)) {
+            error_log('[Passkey][ERROR] RP ID is IP address - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('RP ID 必须是域名', self::ERR_VALIDATION);
+            return;
+        }
+        
+        // 构造 origin（更安全的方式）
         $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $origin = $protocol . '://' . $_SERVER['HTTP_HOST'];
+        
+        // 验证 HTTP_HOST 的安全性（防止Host头注入）
+        $httpHost = $_SERVER['HTTP_HOST'];
+        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9](:[0-9]+)?$/', $httpHost)) {
+            error_log('[Passkey][ERROR] Invalid HTTP_HOST: ' . substr($httpHost, 0, 50) . ' - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('HTTP_HOST 无效', self::ERR_VALIDATION);
+            return;
+        }
+        
+        $origin = $protocol . '://' . $httpHost;
         
         // 使用 WebAuthn 类进行完整验证
         try {
@@ -397,13 +466,54 @@ class Action extends Widget implements ActionInterface
             $publicKey = $verificationResult['publicKey'];
             $counter = $verificationResult['counter'];
             
-            // 验证凭证 ID
+            // 验证凭证 ID 格式
             if (!$this->validateCredentialId($credentialId)) {
                 throw new \Exception('Invalid credential ID format');
             }
             
+            // 额外的安全检查：验证返回的数据
+            if (!isset($verificationResult['userVerified'])) {
+                throw new \Exception('Missing userVerified flag');
+            }
+            
+            // 验证 counter 值的合理性
+            if (!is_int($counter) || $counter < 0) {
+                throw new \Exception('Invalid counter value');
+            }
+            
+            // 检查凭证ID长度（MySQL VARCHAR(512) 限制）
+            $credentialIdDecoded = base64_decode($credentialId, true);
+            if ($credentialIdDecoded === false) {
+                error_log('[Passkey][ERROR] Invalid credential ID encoding - ErrCode: ' . self::ERR_VALIDATION);
+                throw new \Exception('Invalid credential ID encoding');
+            }
+            
+            // Base64 编码后的长度检查（预防 MySQL 截断）
+            if (strlen($credentialId) > self::MAX_CREDENTIAL_ID_LENGTH) {
+                error_log('[Passkey][ERROR] Credential ID exceeds maximum length (' . strlen($credentialId) . ' > ' . 
+                         self::MAX_CREDENTIAL_ID_LENGTH . ') - ErrCode: ' . self::ERR_CREDENTIAL_LENGTH);
+                throw new \Exception('Credential ID too long');
+            }
+            
+            // 检查凭证ID是否已被使用（防止凭证重用攻击）
+            $existingCred = $this->db->fetchRow($this->db->select()
+                ->from($this->prefix . 'passkey_credentials')
+                ->where('credential_id = ?', $credentialId)
+                ->limit(1));
+            
+            if ($existingCred) {
+                error_log('[Passkey][ERROR] Credential ID already exists - ErrCode: ' . self::ERR_DUPLICATE);
+                throw new \Exception('Credential ID already exists');
+            }
+            
         } catch (\Exception $e) {
-            $this->error('WebAuthn 验证失败: ' . $e->getMessage());
+            // 记录详细的错误信息用于调试
+            error_log('[Passkey][ERROR] Registration verification failed: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Registration trace: ' . $e->getTraceAsString());
+            
+            // 返回通用错误信息，避免泄露敏感配置
+            $errorCode = $this->getErrorCode($e->getMessage());
+            $this->error('验证失败，请重试', $errorCode);
             return;
         }
         
@@ -415,29 +525,70 @@ class Action extends Widget implements ActionInterface
             $screenName = isset($_SESSION['passkey_register_screenname']) ? $_SESSION['passkey_register_screenname'] : '';
             
             if (empty($username) || empty($email)) {
-                $this->error('注册信息丢失，请重试');
+                error_log('[Passkey][ERROR] Registration info lost - ErrCode: ' . self::ERR_SESSION);
+                $this->error('注册信息丢失，请重试', self::ERR_SESSION);
                 return;
             }
             
             $password = md5(uniqid(mt_rand(), true)); // 随机密码
             
-            // 插入新用户
-            $insertData = array(
-                'name' => $username,
-                'password' => Common::hash($password),
-                'mail' => $email,
-                'url' => '',
-                'screenName' => $screenName,
-                'created' => time(),
-                'activated' => time(),
-                'logged' => time(),
-                'group' => 'subscriber'
-            );
-            
-            $userId = $this->db->query($this->db->insert($this->prefix . 'users')->rows($insertData));
-            
-            if (!$userId) {
-                $this->error('创建用户失败');
+            // 使用数据库事务确保原子性
+            try {
+                // 开始事务（如果数据库支持）
+                if (method_exists($this->db, 'beginTransaction')) {
+                    $this->db->beginTransaction();
+                }
+                
+                // 再次检查用户名和邮箱是否被占用（防止竞态条件）
+                $checkUser = $this->db->fetchRow($this->db->select()
+                    ->from($this->prefix . 'users')
+                    ->where('name = ? OR mail = ?', $username, $email)
+                    ->limit(1));
+                
+                if ($checkUser) {
+                    if (method_exists($this->db, 'rollback')) {
+                        $this->db->rollback();
+                    }
+                    error_log('[Passkey][ERROR] Username or email already taken (race condition) - ErrCode: ' . self::ERR_DUPLICATE);
+                    $this->error('用户名或邮箱已被使用', self::ERR_DUPLICATE);
+                    return;
+                }
+                
+                // 插入新用户
+                $insertData = array(
+                    'name' => $username,
+                    'password' => Common::hash($password),
+                    'mail' => $email,
+                    'url' => '',
+                    'screenName' => $screenName,
+                    'created' => time(),
+                    'activated' => time(),
+                    'logged' => time(),
+                    'group' => 'subscriber'
+                );
+                
+                $userId = $this->db->query($this->db->insert($this->prefix . 'users')->rows($insertData));
+                
+                if (!$userId) {
+                    if (method_exists($this->db, 'rollback')) {
+                        $this->db->rollback();
+                    }
+                    error_log('[Passkey][ERROR] Failed to insert user - ErrCode: ' . self::ERR_UNKNOWN);
+                    $this->error('创建用户失败', self::ERR_UNKNOWN);
+                    return;
+                }
+                
+                // 提交事务
+                if (method_exists($this->db, 'commit')) {
+                    $this->db->commit();
+                }
+                
+            } catch (\Exception $e) {
+                if (method_exists($this->db, 'rollback')) {
+                    $this->db->rollback();
+                }
+                error_log('[Passkey][ERROR] Failed to create user: ' . $e->getMessage() . ' - ErrCode: ' . self::ERR_UNKNOWN);
+                $this->error('创建用户失败', self::ERR_UNKNOWN);
                 return;
             }
         }
@@ -463,11 +614,24 @@ class Action extends Widget implements ActionInterface
             
             // 如果是新用户，自动登录
             if ($isNewUser) {
+                // 重新生成 session ID 防止会话固定攻击
+                if (session_status() === PHP_SESSION_ACTIVE) {
+                    session_regenerate_id(true);
+                }
+                
                 // 使用 Typecho 标准的 simpleLogin 方法
                 $userWidget = \Widget\User::alloc();
                 $expire = 30 * 24 * 3600;
                 
                 if ($userWidget->simpleLogin($userId, false, $expire)) {
+                    // 登录成功后再次重新生成 session ID
+                    if (session_status() === PHP_SESSION_ACTIVE) {
+                        session_regenerate_id(true);
+                    }
+                    
+                    // 记录注册事件
+                    error_log('[Passkey][INFO] New user registered successfully - User ID: ' . $userId . ', IP: ' . $this->request->getIp());
+                    
                     $this->success(array(
                         'message' => '注册成功！欢迎使用 Passkey 登录',
                         'isNewUser' => true,
@@ -481,12 +645,21 @@ class Action extends Widget implements ActionInterface
         } catch (\Exception $e) {
             // 捕获数据库唯一键冲突异常（竞态条件导致的重复插入）
             $errorMessage = $e->getMessage();
+            $errorCode = self::ERR_UNKNOWN;
+            
             if (strpos($errorMessage, 'Duplicate') !== false || 
                 strpos($errorMessage, 'unique') !== false ||
                 strpos($errorMessage, 'UNIQUE') !== false) {
-                $this->error('此凭证已经注册过');
+                error_log('[Passkey][ERROR] Duplicate credential detected - ErrCode: ' . self::ERR_DUPLICATE);
+                $this->error('此凭证已经注册过', self::ERR_DUPLICATE);
+            } else if (strpos($errorMessage, 'too long') !== false || 
+                       strpos($errorMessage, 'Data too long') !== false) {
+                // MySQL 数据过长错误（可能是 credential_id 超长）
+                error_log('[Passkey][ERROR] Data too long for database - ErrCode: ' . self::ERR_CREDENTIAL_LENGTH);
+                $this->error('凭证数据过长，注册失败', self::ERR_CREDENTIAL_LENGTH);
             } else {
-                $this->error('Failed to save credential: ' . $errorMessage);
+                error_log('[Passkey][ERROR] Failed to save credential: ' . $errorMessage . ' - ErrCode: ' . self::ERR_UNKNOWN);
+                $this->error('保存凭证失败，请重试', self::ERR_UNKNOWN);
             }
         }
     }
@@ -503,7 +676,8 @@ class Action extends Widget implements ActionInterface
         
         // 验证 RP ID
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
-            $this->error('无效的 RP ID');
+            error_log('[Passkey][ERROR] Invalid RP ID in loginOptions - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('RP ID 格式错误', self::ERR_VALIDATION);
             return;
         }
         
@@ -533,13 +707,15 @@ class Action extends Widget implements ActionInterface
         $this->startSession();
         
         if (!isset($_SESSION['passkey_login_challenge'])) {
-            $this->error('会话已过期，请重试');
+            error_log('[Passkey][ERROR] Login session not found - ErrCode: ' . self::ERR_SESSION);
+            $this->error('会话已过期，请重试', self::ERR_SESSION);
             return;
         }
         
         // 检查 session 超时
         if (!$this->checkSessionTimeout('passkey_login_challenge')) {
-            $this->error('Session 已超时，请重新开始登录');
+            error_log('[Passkey][WARNING] Login session timeout - ErrCode: ' . self::ERR_SESSION);
+            $this->error('会话已过期，请重新登录', self::ERR_SESSION);
             return;
         }
         
@@ -549,24 +725,46 @@ class Action extends Widget implements ActionInterface
         
         // 验证 JSON 解析是否成功
         if (json_last_error() !== JSON_ERROR_NONE) {
-            $this->error('无效的请求数据');
+            error_log('[Passkey][ERROR] JSON parse error in loginVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('请求数据格式错误', self::ERR_VALIDATION);
             return;
         }
         
         if (!$data || !isset($data['id']) || !isset($data['rawId']) || !isset($data['response'])) {
-            $this->error('数据格式错误');
+            error_log('[Passkey][ERROR] Missing required fields in loginVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('请求数据不完整', self::ERR_VALIDATION);
             return;
         }
         
         // 验证数据类型
         if (!is_string($data['id']) || !is_string($data['rawId']) || !is_array($data['response'])) {
-            $this->error('Invalid data type');
+            error_log('[Passkey][ERROR] Invalid data types in loginVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('请求数据类型错误', self::ERR_VALIDATION);
             return;
         }
 
         // 验证 rawId 长度（防止缓冲区溢出）
         if (strlen($data['rawId']) > 2048) {
-            $this->error('Invalid credential ID length');
+            error_log('[Passkey][ERROR] RawId too long in loginVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('凭证 ID 过长', self::ERR_VALIDATION);
+            return;
+        }
+        
+        // 验证 response 结构完整性
+        if (!isset($data['response']['clientDataJSON']) || 
+            !isset($data['response']['authenticatorData']) || 
+            !isset($data['response']['signature'])) {
+            error_log('[Passkey][ERROR] Missing response fields in loginVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('响应数据不完整', self::ERR_VALIDATION);
+            return;
+        }
+        
+        // 验证响应字段类型
+        if (!is_string($data['response']['clientDataJSON']) || 
+            !is_string($data['response']['authenticatorData']) || 
+            !is_string($data['response']['signature'])) {
+            error_log('[Passkey][ERROR] Invalid response field types - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('响应数据类型错误', self::ERR_VALIDATION);
             return;
         }
         
@@ -575,7 +773,8 @@ class Action extends Widget implements ActionInterface
         
         // 验证凭证 ID
         if (!$this->validateCredentialId($credentialId)) {
-            $this->error('Invalid credential ID format');
+            error_log('[Passkey][ERROR] Invalid credential ID format in loginVerify - ErrCode: ' . self::ERR_VALIDATION);
+            $this->error('凭证 ID 格式错误', self::ERR_VALIDATION);
             return;
         }
         
@@ -602,7 +801,7 @@ class Action extends Widget implements ActionInterface
                     return;
                 }
                 
-                $this->error('凭证不存在。请先登录后台在"Passkey 管理"中添加凭证。');
+                $this->error('凭证不存在。请先登录后台在"Passkey 管理"中添加凭证。', self::ERR_AUTH_FAILED);
                 return;
             }
             
@@ -611,9 +810,26 @@ class Action extends Widget implements ActionInterface
             $plugin = $options->plugin('Passkey');
             $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
             
-            // 构造 origin
+            // 验证 rpId 格式
+            if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
+                throw new \Exception('Invalid RP ID format');
+            }
+            
+            // 验证 rpId 不是IP地址
+            if (filter_var($rpId, FILTER_VALIDATE_IP)) {
+                throw new \Exception('RP ID cannot be an IP address');
+            }
+            
+            // 构造 origin（安全验证）
             $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $origin = $protocol . '://' . $_SERVER['HTTP_HOST'];
+            
+            // 验证 HTTP_HOST 的安全性
+            $httpHost = $_SERVER['HTTP_HOST'];
+            if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9](:[0-9]+)?$/', $httpHost)) {
+                throw new \Exception('Invalid HTTP_HOST');
+            }
+            
+            $origin = $protocol . '://' . $httpHost;
             
             // 使用 WebAuthn 类进行完整验证
             try {
@@ -628,10 +844,28 @@ class Action extends Widget implements ActionInterface
                 
                 $newCounter = $verificationResult['counter'];
                 
+                // 额外验证：检查返回的标志位
+                if (!isset($verificationResult['userPresent']) || !$verificationResult['userPresent']) {
+                    throw new \Exception('User presence not confirmed');
+                }
+                
+                // 验证 counter 值的合理性
+                if (!is_int($newCounter) || $newCounter < 0) {
+                    throw new \Exception('Invalid counter value');
+                }
+                
             } catch (\Exception $e) {
-                // 记录失败的登录尝试
+                // 记录失败的登录尝试（详细日志）
+                $errorCode = $this->getErrorCode($e->getMessage());
+                error_log('[Passkey][ERROR] Login verification failed for user ' . $credential['user_id'] . 
+                         ': ' . $e->getMessage() . 
+                         ' | ErrCode: ' . $errorCode . 
+                         ' | IP: ' . $this->validateIpAddress($this->request->getIp()) . 
+                         ' | UA: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'));
+                
                 $this->logLoginActivity($credential['user_id'], $credential['id'], $challenge, 'failed');
-                $this->error('WebAuthn 验证失败: ' . $e->getMessage());
+                // 返回通用错误信息
+                $this->error('身份验证失败，请重试', $errorCode);
                 return;
             }
             
@@ -641,7 +875,8 @@ class Action extends Widget implements ActionInterface
                 ->where('uid = ?', $credential['user_id']));
             
             if (!$user) {
-                $this->error('用户不存在');
+                error_log('[Passkey][ERROR] User not found for credential - ErrCode: ' . self::ERR_AUTH_FAILED);
+                $this->error('用户不存在', self::ERR_AUTH_FAILED);
                 return;
             }
             
@@ -650,33 +885,43 @@ class Action extends Widget implements ActionInterface
             $expire = 30 * 24 * 3600;
             
             if (!$userWidget->simpleLogin($user['uid'], false, $expire)) {
-                $this->error('登录失败：无法设置登录状态');
+                error_log('[Passkey][ERROR] Failed to set login state for user: ' . $user['uid'] . ' - ErrCode: ' . self::ERR_UNKNOWN);
+                $this->error('登录失败，请重试', self::ERR_UNKNOWN);
                 return;
             }
             
+            // 登录成功后重新生成 session ID 防止会话固定攻击
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_regenerate_id(true);
+            }
+            
             // 更新凭证计数器和最后使用时间
+            // WHERE 条件包含 counter 检查，提供原子性保护防止并发更新导致的 counter 回退
             try {
-                $updateData = array('counter' => $newCounter);
-                
-                // 尝试更新 last_used 字段（兼容旧版本）
-                try {
-                    $updateData['last_used'] = time();
-                } catch (\Exception $e) {
-                    // 字段不存在，忽略
-                }
-                
-                $this->db->query($this->db->update($this->prefix . 'passkey_credentials')
-                    ->rows($updateData)
-                    ->where('id = ?', $credential['id']));
+                $this->db->query(
+                    $this->db->update($this->prefix . 'passkey_credentials')
+                        ->rows(array(
+                            'counter' => $newCounter,
+                            'last_used' => time()
+                        ))
+                        ->where('id = ? AND counter <= ?', $credential['id'], $newCounter)
+                );
             } catch (\Exception $e) {
-                error_log('Failed to update credential: ' . $e->getMessage());
+                error_log('[Passkey][ERROR] Failed to update credential counter: ' . $e->getMessage());
+                // 更新失败不影响登录流程，但记录错误
             }
             
             // 记录登录日志
             $this->logLoginActivity($credential['user_id'], $credential['id'], $challenge);
             
-            // 清除挑战（但保留在日志中）
+            // 清除登录挑战（防止重放攻击）
             unset($_SESSION['passkey_login_challenge']);
+            unset($_SESSION['passkey_login_challenge_time']);
+            
+            // 记录成功登录事件
+            error_log('[Passkey][INFO] User logged in successfully - User ID: ' . $user['uid'] . 
+                     ', IP: ' . $this->request->getIp() . 
+                     ', Credential ID: ' . substr($credentialId, 0, 20) . '...');
             
             $this->success(array(
                 'message' => '登录成功',
@@ -687,7 +932,8 @@ class Action extends Widget implements ActionInterface
                 )
             ));
         } catch (\Exception $e) {
-            $this->error('登录失败: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Login error: ' . $e->getMessage() . ' - ErrCode: ' . self::ERR_UNKNOWN);
+            $this->error('登录失败，请重试', self::ERR_UNKNOWN);
         }
     }
     
@@ -697,20 +943,56 @@ class Action extends Widget implements ActionInterface
     private function logLoginActivity($userId, $credentialId, $challenge, $status = 'success')
     {
         try {
+            // 验证并清理 IP 地址
+            $ipAddress = $this->validateIpAddress($this->request->getIp());
+            
             $this->db->query($this->db->insert($this->prefix . 'passkey_login_logs')
                 ->rows(array(
                     'user_id' => $userId,
                     'credential_id' => $credentialId,
                     'challenge' => $challenge,
-                    'ip_address' => $this->request->getIp(),
+                    'ip_address' => $ipAddress,
                     'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
                     'login_time' => time(),
                     'status' => $status
                 )));
         } catch (\Exception $e) {
             // 记录失败不影响登录流程
-            error_log('Failed to log Passkey login activity: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Failed to log login activity: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * 验证并清理 IP 地址
+     * 
+     * @param string $ip 待验证的 IP 地址
+     * @return string 验证后的 IP 地址
+     */
+    private function validateIpAddress($ip)
+    {
+        if (empty($ip) || !is_string($ip)) {
+            return '0.0.0.0';
+        }
+        
+        // 移除可能的端口号
+        $ip = preg_replace('/:[0-9]+$/', '', $ip);
+        
+        // IPv6 地址可能被方括号包围
+        $ip = trim($ip, '[]');
+        
+        // 验证 IPv4
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return $ip;
+        }
+        
+        // 验证 IPv6
+        if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6)) {
+            return $ip;
+        }
+        
+        // 无效 IP，记录警告并返回安全值
+        error_log('[Passkey][WARNING] Invalid IP address detected: ' . substr($ip, 0, 50));
+        return '0.0.0.0';
     }
     
     /**
@@ -740,7 +1022,8 @@ class Action extends Widget implements ActionInterface
             
             $this->success($result);
         } catch (\Exception $e) {
-            $this->error('获取凭证列表失败: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Get credentials list error: ' . $e->getMessage() . ' - ErrCode: ' . self::ERR_UNKNOWN);
+            $this->error('获取凭证列表失败，请重试', self::ERR_UNKNOWN);
         }
     }
     
@@ -770,7 +1053,8 @@ class Action extends Widget implements ActionInterface
             
             $this->success(array('message' => '凭证已删除'));
         } catch (\Exception $e) {
-            $this->error('删除失败: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] Delete credential error: ' . $e->getMessage() . ' - ErrCode: ' . self::ERR_UNKNOWN);
+            $this->error('删除凭证失败，请重试', self::ERR_UNKNOWN);
         }
     }
     
@@ -779,15 +1063,15 @@ class Action extends Widget implements ActionInterface
      */
     private function getLoginLogs()
     {
-        error_log('Passkey: getLoginLogs() called');
+        error_log('[Passkey][DEBUG] getLoginLogs() called');
         
         $user = \Widget\User::alloc();
         if (!$user->hasLogin()) {
-            error_log('Passkey: User not logged in');
+            error_log('[Passkey][DEBUG] User not logged in');
             $this->error('请先登录');
         }
         
-        error_log('Passkey: User ID: ' . $user->uid);
+        error_log('[Passkey][DEBUG] User ID: ' . $user->uid);
         
         $limit = (int)$this->request->get('limit', 10);
         if ($limit > 100) $limit = 100;
@@ -800,12 +1084,12 @@ class Action extends Widget implements ActionInterface
             );
             
             if (!$tableExists) {
-                error_log('Passkey: login_logs table does not exist');
+                error_log('[Passkey][DEBUG] login_logs table does not exist');
                 $this->success(array()); // 返回空数组而不是错误
                 return;
             }
             
-            error_log('Passkey: Fetching logs for user ' . $user->uid);
+            error_log('[Passkey][DEBUG] Fetching logs for user ' . $user->uid);
             
             $logs = $this->db->fetchAll(
                 $this->db->select('l.*, c.credential_id')
@@ -816,11 +1100,11 @@ class Action extends Widget implements ActionInterface
                     ->limit($limit)
             );
             
-            error_log('Passkey: Found ' . count($logs) . ' logs');
+            error_log('[Passkey][DEBUG] Found ' . count($logs) . ' logs');
             
             $result = array();
             foreach ($logs as $index => $log) {
-                error_log('Passkey: Processing log #' . $index . ': ' . json_encode($log));
+                error_log('[Passkey][DEBUG] Processing log #' . $index . ': ' . json_encode($log));
                 
                 try {
                     // 直接使用 base64 编码的凭证 ID，不解码（避免二进制数据导致 UTF-8 错误）
@@ -839,20 +1123,20 @@ class Action extends Widget implements ActionInterface
                         'status' => $log['status']
                     );
                     
-                    error_log('Passkey: Processed item: ' . json_encode($item));
+                    error_log('[Passkey][DEBUG] Processed item: ' . json_encode($item));
                     $result[] = $item;
                 } catch (\Exception $e) {
-                    error_log('Passkey: Error processing log #' . $index . ': ' . $e->getMessage());
+                    error_log('[Passkey][DEBUG] Error processing log #' . $index . ': ' . $e->getMessage());
                 }
             }
             
-            error_log('Passkey: Result array count: ' . count($result));
-            error_log('Passkey: Result array JSON: ' . json_encode($result));
-            error_log('Passkey: Returning success with ' . count($result) . ' results');
+            error_log('[Passkey][DEBUG] Result array count: ' . count($result));
+            error_log('[Passkey][DEBUG] Result array JSON: ' . json_encode($result));
+            error_log('[Passkey][DEBUG] Returning success with ' . count($result) . ' results');
             $this->success($result);
         } catch (\Exception $e) {
-            error_log('Passkey: getLoginLogs exception: ' . $e->getMessage());
-            $this->error('获取登录日志失败: ' . $e->getMessage());
+            error_log('[Passkey][ERROR] getLoginLogs exception: ' . $e->getMessage() . ' - ErrCode: ' . self::ERR_UNKNOWN);
+            $this->error('获取登录日志失败，请重试', self::ERR_UNKNOWN);
         }
     }
     
@@ -918,12 +1202,12 @@ class Action extends Widget implements ActionInterface
         }
         
         if ($globalCount >= self::MAX_ATTEMPTS_PER_HOUR) {
-            error_log('Passkey: Rate limit exceeded (global)');
+            error_log('[Passkey][WARNING] Rate limit exceeded (global)');
             return false;
         }
         
         if ($ipCount >= self::MAX_ATTEMPTS_PER_IP) {
-            error_log('Passkey: Rate limit exceeded for IP: ' . $ip);
+            error_log('[Passkey][WARNING] Rate limit exceeded for IP: ' . $ip);
             return false;
         }
         
@@ -976,18 +1260,35 @@ class Action extends Widget implements ActionInterface
     
     /**
      * 验证凭证 ID 格式
+     * 
+     * @param string $credentialId Base64 编码的凭证 ID
+     * @return bool 是否有效
      */
     private function validateCredentialId($credentialId) {
+        // 类型检查
         if (!is_string($credentialId)) {
             return false;
         }
         
+        // 长度检查
         if (strlen($credentialId) === 0 || strlen($credentialId) > self::MAX_CREDENTIAL_ID_LENGTH) {
             return false;
         }
         
-        // Base64 编码检查
-        if (!preg_match('/^[A-Za-z0-9+\/=]+$/', $credentialId)) {
+        // Base64 编码检查（允许标准 base64 和 base64url）
+        if (!preg_match('/^[A-Za-z0-9+\/=_-]+$/', $credentialId)) {
+            return false;
+        }
+        
+        // 尝试解码以验证有效性
+        $decoded = base64_decode($credentialId, true);
+        if ($decoded === false) {
+            return false;
+        }
+        
+        // 验证解码后的长度合理性
+        $decodedLength = strlen($decoded);
+        if ($decodedLength < 16 || $decodedLength > 1024) {
             return false;
         }
         
@@ -1006,94 +1307,87 @@ class Action extends Widget implements ActionInterface
     
     /**
      * 生成随机 challenge
+     * 使用安全的随机数生成器
+     * 
+     * @return string Base64URL 编码的 challenge
+     * @throws \Exception 当随机数生成失败时
      */
     private function generateChallenge()
     {
-        $bytes = random_bytes(32);
-        return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+        try {
+            // 生成32字节（256位）的强随机数
+            $bytes = random_bytes(32);
+            
+            // 转换为 base64url 编码
+            return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
+        } catch (\Exception $e) {
+            // 如果 random_bytes 失败，记录错误并抛出异常
+            error_log('[Passkey][ERROR] Failed to generate challenge: ' . $e->getMessage());
+            throw new \Exception('Failed to generate secure challenge');
+        }
     }
     
     /**
-     * 返回成功响应
+     * 返回成功响应（使用 Typecho 标准方法）
      */
     private function success($data)
     {
-        error_log('Passkey: success() called, data type: ' . gettype($data));
-        error_log('Passkey: success() data count: ' . (is_array($data) ? count($data) : 'N/A'));
-        
-        $dataJson = json_encode($data);
-        if ($dataJson === false) {
-            error_log('Passkey: json_encode data failed: ' . json_last_error_msg());
-        } else {
-            error_log('Passkey: Data JSON length: ' . strlen($dataJson));
-            error_log('Passkey: Data JSON preview: ' . substr($dataJson, 0, 500));
-        }
-        
-        error_log('Passkey: Output buffer level before cleanup: ' . ob_get_level());
-        
-        // 清空之前的输出缓冲区
-        while (ob_get_level() > 0) {
-            $discarded = ob_get_clean();
-            if (!empty($discarded)) {
-                error_log('Passkey: Discarded buffer content length: ' . strlen($discarded));
-                error_log('Passkey: Discarded buffer preview: ' . substr($discarded, 0, 200));
-            }
-        }
-        
-        error_log('Passkey: Output buffer level after cleanup: ' . ob_get_level());
-        
-        // 确保内容类型正确
-        header('Content-Type: application/json');
-        
-        $json = json_encode(array(
+        $this->response->throwJson(array(
             'success' => true,
             'data' => $data
         ));
-        
-        if ($json === false) {
-            error_log('Passkey: json_encode response failed: ' . json_last_error_msg());
-            $json = json_encode(array(
-                'success' => false,
-                'error' => 'JSON encoding failed: ' . json_last_error_msg()
-            ));
-        }
-        
-        error_log('Passkey: Final JSON length: ' . strlen($json));
-        error_log('Passkey: Final JSON output: ' . substr($json, 0, 500));
-        
-        echo $json;
-        exit;
     }
     
     /**
-     * 返回错误响应
+     * 返回错误响应（使用 Typecho 标准方法）
+     * 
+     * @param string $message 用户友好的错误信息
+     * @param string $errorCode 错误代码（可选，用于日志追踪）
      */
-    private function error($message)
+    private function error($message, $errorCode = null)
     {
-        error_log('Passkey: error() called with message: ' . $message);
-        error_log('Passkey: Output buffer level before cleanup: ' . ob_get_level());
-        
-        // 清空之前的输出缓冲区
-        while (ob_get_level() > 0) {
-            $discarded = ob_get_clean();
-            if (!empty($discarded)) {
-                error_log('Passkey: Discarded buffer content: ' . substr($discarded, 0, 200));
-            }
-        }
-        
-        error_log('Passkey: Output buffer level after cleanup: ' . ob_get_level());
-        
-        // 确保内容类型正确
-        header('Content-Type: application/json');
-        
-        $json = json_encode(array(
+        $response = array(
             'success' => false,
             'error' => $message
-        ));
+        );
         
-        error_log('Passkey: JSON output: ' . $json);
+        // 在开发环境下可以返回错误代码
+        if ($errorCode && defined('__TYPECHO_DEBUG__') && __TYPECHO_DEBUG__) {
+            $response['errorCode'] = $errorCode;
+        }
         
-        echo $json;
-        exit;
+        $this->response->throwJson($response);
+    }
+    
+    /**
+     * 根据错误信息获取错误代码
+     * 
+     * @param string $errorMessage 错误信息
+     * @return string 错误代码
+     */
+    private function getErrorCode($errorMessage)
+    {
+        $message = strtolower($errorMessage);
+        
+        if (strpos($message, 'origin') !== false) {
+            return self::ERR_ORIGIN_MISMATCH;
+        }
+        if (strpos($message, 'credential') !== false && strpos($message, 'length') !== false) {
+            return self::ERR_CREDENTIAL_LENGTH;
+        }
+        if (strpos($message, 'duplicate') !== false || strpos($message, 'exists') !== false) {
+            return self::ERR_DUPLICATE;
+        }
+        if (strpos($message, 'challenge') !== false) {
+            return self::ERR_AUTH_FAILED;
+        }
+        if (strpos($message, 'signature') !== false) {
+            return self::ERR_AUTH_FAILED;
+        }
+        if (strpos($message, 'counter') !== false) {
+            return self::ERR_AUTH_FAILED;
+        }
+        
+        return self::ERR_UNKNOWN;
     }
 }
