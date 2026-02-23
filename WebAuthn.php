@@ -604,6 +604,19 @@ class WebAuthn
             throw new \Exception('Unsupported curve');
         }
         
+        // WebAuthn 签名是 IEEE P1363 格式（r || s，每个 32 字节）
+        // 需要转换为 DER 格式供 openssl_verify 使用
+        if (strlen($signature) === 64) {
+            // 标准的 P-256 签名长度
+            $signature = self::ieee1363ToDer($signature);
+        } elseif (strlen($signature) > 64) {
+            // 某些情况下签名可能已经是 DER 格式或包含额外字节
+            // 尝试直接使用
+            error_log('Warning: ES256 signature length is ' . strlen($signature) . ', expected 64');
+        } else {
+            throw new \Exception('Invalid ES256 signature length: ' . strlen($signature));
+        }
+        
         // 构造 PEM 格式的公钥
         $x = $publicKey['x'];
         $y = $publicKey['y'];
@@ -720,6 +733,31 @@ class WebAuthn
         }
         
         return "\x02" . self::encodeDERLength(strlen($value)) . $value;
+    }
+    
+    /**
+     * 将 IEEE P1363 格式签名转换为 DER 格式
+     * IEEE P1363: r || s (每个 32 字节，共 64 字节)
+     * DER: SEQUENCE { INTEGER r, INTEGER s }
+     */
+    private static function ieee1363ToDer($signature)
+    {
+        if (strlen($signature) !== 64) {
+            throw new \Exception('Invalid IEEE P1363 signature length');
+        }
+        
+        // 分离 r 和 s
+        $r = substr($signature, 0, 32);
+        $s = substr($signature, 32, 32);
+        
+        // 编码 r 和 s 为 DER INTEGER
+        $rDer = self::encodeDERInteger($r);
+        $sDer = self::encodeDERInteger($s);
+        
+        // 构造 SEQUENCE
+        $sequence = $rDer . $sDer;
+        
+        return "\x30" . self::encodeDERLength(strlen($sequence)) . $sequence;
     }
     
     /**

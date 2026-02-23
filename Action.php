@@ -252,7 +252,7 @@ class Action extends Widget implements ActionInterface
         $challenge = $this->generateChallenge();
         
         // 保存 challenge 和用户信息到 session
-        session_start();
+        $this->startSession();
         $_SESSION['passkey_register_challenge'] = $challenge;
         $_SESSION['passkey_register_user_id'] = $isLoggedIn ? $user->uid : null;
         $_SESSION['passkey_register_is_new_user'] = !$isLoggedIn;
@@ -297,7 +297,7 @@ class Action extends Widget implements ActionInterface
      */
     private function registerVerify()
     {
-        session_start();
+        $this->startSession();
         
         if (!isset($_SESSION['passkey_register_challenge'])) {
             $this->error('Invalid session');
@@ -493,7 +493,7 @@ class Action extends Widget implements ActionInterface
         $challenge = $this->generateChallenge();
         
         // 保存 challenge 到 session
-        session_start();
+        $this->startSession();
         $_SESSION['passkey_login_challenge'] = $challenge;
         $this->setSessionTimestamp('passkey_login_challenge');
         
@@ -512,7 +512,7 @@ class Action extends Widget implements ActionInterface
      */
     private function loginVerify()
     {
-        session_start();
+        $this->startSession();
         
         if (!isset($_SESSION['passkey_login_challenge'])) {
             $this->error('会话已过期，请重试');
@@ -831,7 +831,7 @@ class Action extends Widget implements ActionInterface
      */
     private function checkRateLimit()
     {
-        session_start();
+        $this->startSession();
         $now = time();
         $ip = $this->request->getIp();
         
@@ -935,6 +935,16 @@ class Action extends Widget implements ActionInterface
         }
         
         return true;
+    }
+    
+    /**
+     * 安全地启动 session（如果尚未启动）
+     */
+    private function startSession()
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
     }
     
     /**
