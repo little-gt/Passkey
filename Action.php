@@ -38,6 +38,10 @@ class Action extends Widget implements ActionInterface
      */
     public function action()
     {
+        error_log('Passkey: action() called');
+        error_log('Passkey: Request URI: ' . $_SERVER['REQUEST_URI']);
+        error_log('Passkey: Action param: ' . $this->request->get('do'));
+        
         // 捕获所有输出，确保只返回 JSON
         ob_start();
         
@@ -105,18 +109,32 @@ class Action extends Widget implements ActionInterface
         }
         } catch (\Exception $e) {
             // 捕获所有未处理的异常
-            ob_clean(); // 清空输出缓冲区
             error_log('Passkey Action Exception: ' . $e->getMessage());
-            $this->error('系统错误: ' . $e->getMessage());
+            error_log('Passkey Action Exception trace: ' . $e->getTraceAsString());
+            
+            // 清空缓冲区并输出错误
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+            
+            header('Content-Type: application/json');
+            echo json_encode(array(
+                'success' => false,
+                'error' => '系统错误: ' . $e->getMessage()
+            ));
+            exit;
         } finally {
             // 恢复错误处理器
             if (isset($previousErrorHandler)) {
                 set_error_handler($previousErrorHandler);
             }
-            // 清理并丢弃可能的警告输出
-            $unwantedOutput = ob_get_clean();
-            if (!empty($unwantedOutput)) {
-                error_log('Passkey: Unwanted output captured: ' . substr($unwantedOutput, 0, 200));
+            
+            // 如果还有缓冲区，清理之
+            if (ob_get_level() > 0) {
+                $unwantedOutput = ob_get_clean();
+                if (!empty($unwantedOutput)) {
+                    error_log('Passkey: Unwanted output in finally: ' . substr($unwantedOutput, 0, 200));
+                }
             }
         }
     }
@@ -761,17 +779,34 @@ class Action extends Widget implements ActionInterface
      */
     private function getLoginLogs()
     {
+        error_log('Passkey: getLoginLogs() called');
+        
         $user = \Widget\User::alloc();
         if (!$user->hasLogin()) {
+            error_log('Passkey: User not logged in');
             $this->error('请先登录');
-            return;
         }
+        
+        error_log('Passkey: User ID: ' . $user->uid);
         
         $limit = (int)$this->request->get('limit', 10);
         if ($limit > 100) $limit = 100;
         if ($limit < 1) $limit = 10;
         
         try {
+            // 检查表是否存在
+            $tableExists = $this->db->fetchRow(
+                $this->db->query("SHOW TABLES LIKE '{$this->prefix}passkey_login_logs'")
+            );
+            
+            if (!$tableExists) {
+                error_log('Passkey: login_logs table does not exist');
+                $this->success(array()); // 返回空数组而不是错误
+                return;
+            }
+            
+            error_log('Passkey: Fetching logs for user ' . $user->uid);
+            
             $logs = $this->db->fetchAll(
                 $this->db->select('l.*, c.credential_id')
                     ->from($this->prefix . 'passkey_login_logs AS l')
@@ -781,20 +816,42 @@ class Action extends Widget implements ActionInterface
                     ->limit($limit)
             );
             
+            error_log('Passkey: Found ' . count($logs) . ' logs');
+            
             $result = array();
-            foreach ($logs as $log) {
-                $result[] = array(
-                    'id' => $log['id'],
-                    'credential_id' => isset($log['credential_id']) ? substr(base64_decode($log['credential_id']), 0, 16) . '...' : 'N/A',
-                    'ip_address' => $log['ip_address'],
-                    'user_agent' => $this->parseUserAgent($log['user_agent']),
-                    'login_time' => date('Y-m-d H:i:s', $log['login_time']),
-                    'status' => $log['status']
-                );
+            foreach ($logs as $index => $log) {
+                error_log('Passkey: Processing log #' . $index . ': ' . json_encode($log));
+                
+                try {
+                    // 直接使用 base64 编码的凭证 ID，不解码（避免二进制数据导致 UTF-8 错误）
+                    $credentialId = 'N/A';
+                    if (isset($log['credential_id']) && !empty($log['credential_id'])) {
+                        // 截取前20个字符的 base64 字符串
+                        $credentialId = substr($log['credential_id'], 0, 20) . '...';
+                    }
+                    
+                    $item = array(
+                        'id' => $log['id'],
+                        'credential_id' => $credentialId,
+                        'ip_address' => $log['ip_address'],
+                        'user_agent' => $this->parseUserAgent($log['user_agent']),
+                        'login_time' => date('Y-m-d H:i:s', $log['login_time']),
+                        'status' => $log['status']
+                    );
+                    
+                    error_log('Passkey: Processed item: ' . json_encode($item));
+                    $result[] = $item;
+                } catch (\Exception $e) {
+                    error_log('Passkey: Error processing log #' . $index . ': ' . $e->getMessage());
+                }
             }
             
+            error_log('Passkey: Result array count: ' . count($result));
+            error_log('Passkey: Result array JSON: ' . json_encode($result));
+            error_log('Passkey: Returning success with ' . count($result) . ' results');
             $this->success($result);
         } catch (\Exception $e) {
+            error_log('Passkey: getLoginLogs exception: ' . $e->getMessage());
             $this->error('获取登录日志失败: ' . $e->getMessage());
         }
     }
@@ -961,10 +1018,50 @@ class Action extends Widget implements ActionInterface
      */
     private function success($data)
     {
-        echo json_encode(array(
+        error_log('Passkey: success() called, data type: ' . gettype($data));
+        error_log('Passkey: success() data count: ' . (is_array($data) ? count($data) : 'N/A'));
+        
+        $dataJson = json_encode($data);
+        if ($dataJson === false) {
+            error_log('Passkey: json_encode data failed: ' . json_last_error_msg());
+        } else {
+            error_log('Passkey: Data JSON length: ' . strlen($dataJson));
+            error_log('Passkey: Data JSON preview: ' . substr($dataJson, 0, 500));
+        }
+        
+        error_log('Passkey: Output buffer level before cleanup: ' . ob_get_level());
+        
+        // 清空之前的输出缓冲区
+        while (ob_get_level() > 0) {
+            $discarded = ob_get_clean();
+            if (!empty($discarded)) {
+                error_log('Passkey: Discarded buffer content length: ' . strlen($discarded));
+                error_log('Passkey: Discarded buffer preview: ' . substr($discarded, 0, 200));
+            }
+        }
+        
+        error_log('Passkey: Output buffer level after cleanup: ' . ob_get_level());
+        
+        // 确保内容类型正确
+        header('Content-Type: application/json');
+        
+        $json = json_encode(array(
             'success' => true,
             'data' => $data
         ));
+        
+        if ($json === false) {
+            error_log('Passkey: json_encode response failed: ' . json_last_error_msg());
+            $json = json_encode(array(
+                'success' => false,
+                'error' => 'JSON encoding failed: ' . json_last_error_msg()
+            ));
+        }
+        
+        error_log('Passkey: Final JSON length: ' . strlen($json));
+        error_log('Passkey: Final JSON output: ' . substr($json, 0, 500));
+        
+        echo $json;
         exit;
     }
     
@@ -973,10 +1070,30 @@ class Action extends Widget implements ActionInterface
      */
     private function error($message)
     {
-        echo json_encode(array(
+        error_log('Passkey: error() called with message: ' . $message);
+        error_log('Passkey: Output buffer level before cleanup: ' . ob_get_level());
+        
+        // 清空之前的输出缓冲区
+        while (ob_get_level() > 0) {
+            $discarded = ob_get_clean();
+            if (!empty($discarded)) {
+                error_log('Passkey: Discarded buffer content: ' . substr($discarded, 0, 200));
+            }
+        }
+        
+        error_log('Passkey: Output buffer level after cleanup: ' . ob_get_level());
+        
+        // 确保内容类型正确
+        header('Content-Type: application/json');
+        
+        $json = json_encode(array(
             'success' => false,
             'error' => $message
         ));
+        
+        error_log('Passkey: JSON output: ' . $json);
+        
+        echo $json;
         exit;
     }
 }
