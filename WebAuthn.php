@@ -604,17 +604,16 @@ class WebAuthn
             throw new \Exception('Unsupported curve');
         }
         
-        // WebAuthn 签名是 IEEE P1363 格式（r || s，每个 32 字节）
-        // 需要转换为 DER 格式供 openssl_verify 使用
+        // WebAuthn 签名可能是 IEEE P1363 格式（r || s，每个 32 字节）或 DER 格式
+        // 检测并转换为 DER 格式供 openssl_verify 使用
         if (strlen($signature) === 64) {
-            // 标准的 P-256 签名长度
+            // 标准的 IEEE P1363 格式
             $signature = self::ieee1363ToDer($signature);
-        } elseif (strlen($signature) > 64) {
-            // 某些情况下签名可能已经是 DER 格式或包含额外字节
-            // 尝试直接使用
-            error_log('Warning: ES256 signature length is ' . strlen($signature) . ', expected 64');
+        } elseif (strlen($signature) > 64 && ord($signature[0]) === 0x30) {
+            // 可能已经是 DER 格式（SEQUENCE tag）
+            // 直接使用
         } else {
-            throw new \Exception('Invalid ES256 signature length: ' . strlen($signature));
+            throw new \Exception('Invalid ES256 signature format');
         }
         
         // 构造 PEM 格式的公钥
@@ -683,16 +682,29 @@ class WebAuthn
      */
     private static function encodeECPublicKey($point)
     {
-        // OID for secp256r1 (P-256)
-        $oid = pack('H*', '06082a8648ce3d030107');
+        // EC Public Key DER 结构:
+        // SEQUENCE {
+        //   SEQUENCE {
+        //     OBJECT IDENTIFIER ecPublicKey (1.2.840.10045.2.1)
+        //     OBJECT IDENTIFIER prime256v1 (1.2.840.10045.3.1.7)
+        //   }
+        //   BIT STRING (uncompressed point)
+        // }
         
-        // SEQUENCE
-        $algorithm = "\x30" . chr(strlen($oid) + 4) . 
-                     "\x06\x07\x2a\x86\x48\xce\x3d\x02\x01" . 
-                     $oid;
+        // OID: ecPublicKey (1.2.840.10045.2.1)
+        $oidEcPublicKey = "\x06\x07\x2a\x86\x48\xce\x3d\x02\x01";
         
+        // OID: prime256v1/secp256r1 (1.2.840.10045.3.1.7)
+        $oidPrime256v1 = "\x06\x08\x2a\x86\x48\xce\x3d\x03\x01\x07";
+        
+        // Algorithm SEQUENCE
+        $algorithm = "\x30" . chr(strlen($oidEcPublicKey) + strlen($oidPrime256v1)) . 
+                     $oidEcPublicKey . $oidPrime256v1;
+        
+        // BIT STRING (0x00 表示没有 unused bits)
         $bitString = "\x03" . chr(strlen($point) + 1) . "\x00" . $point;
         
+        // 外层 SEQUENCE
         $sequence = $algorithm . $bitString;
         
         return "\x30" . chr(strlen($sequence)) . $sequence;

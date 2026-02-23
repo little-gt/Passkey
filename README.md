@@ -2,7 +2,7 @@
 
 一个为 Typecho 博客系统提供 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。支持登录历史审计、完整数据管理、企业级安全配置和优雅的网页内通知系统。
 
-![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3--rc1-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.3--rc3-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
