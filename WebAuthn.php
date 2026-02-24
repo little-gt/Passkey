@@ -13,14 +13,14 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  */
 class WebAuthn
 {
-    // 安全常量
-    const MAX_CHALLENGE_LENGTH = 1024;      // Challenge 最大长度
-    const MAX_CLIENT_DATA_LENGTH = 8192;    // ClientDataJSON 最大长度
-    const MAX_ATTESTATION_LENGTH = 65536;   // AttestationObject 最大长度
-    const MAX_AUTHENTICATOR_DATA_LENGTH = 65536; // AuthenticatorData 最大长度
-    const MAX_SIGNATURE_LENGTH = 1024;      // 签名最大长度
-    const MAX_PUBLIC_KEY_LENGTH = 8192;     // 公钥最大长度
-    const MAX_CBOR_DEPTH = 10;              // CBOR 解码最大深度
+    // 默认安全常量（当配置不可用时使用）
+    const DEFAULT_MAX_CHALLENGE_LENGTH = 1024;             //Challenge 最大长度
+    const DEFAULT_MAX_CLIENT_DATA_LENGTH = 8192;           //ClientDataJSON 最大长度
+    const DEFAULT_MAX_ATTESTATION_LENGTH = 65536;          //AttestationObject 最大长度
+    const DEFAULT_MAX_AUTHENTICATOR_DATA_LENGTH = 65536;   //AuthenticatorData 最大长度
+    const DEFAULT_MAX_SIGNATURE_LENGTH = 1024;             //Signature 最大长度
+    const DEFAULT_MAX_PUBLIC_KEY_LENGTH = 8192;            //PublicKey 最大长度
+    const DEFAULT_MAX_CBOR_DEPTH = 10;                     //CBOR 解码最大深度，防止递归攻击 
     
     // 支持的算法白名单（只支持 PHP OpenSSL 原生支持的）
     const SUPPORTED_ALGORITHMS = array(
@@ -32,6 +32,37 @@ class WebAuthn
     const SUPPORTED_CURVES = array(
         1 => 'P-256'
     );
+    
+    /**
+     * 获取安全配置参数
+     * 从插件配置中读取，如果不存在则使用默认值
+     */
+    private static function getSecurityConfig($key)
+    {
+        try {
+            $options = \Widget\Options::alloc();
+            $plugin = $options->plugin('Passkey');
+            
+            if ($plugin && isset($plugin->$key)) {
+                return (int)$plugin->$key;
+            }
+        } catch (\Exception $e) {
+            // 配置不可用，使用默认值
+        }
+        
+        // 返回默认值
+        $defaults = array(
+            'maxChallengeLength' => self::DEFAULT_MAX_CHALLENGE_LENGTH,
+            'maxClientDataLength' => self::DEFAULT_MAX_CLIENT_DATA_LENGTH,
+            'maxAttestationLength' => self::DEFAULT_MAX_ATTESTATION_LENGTH,
+            'maxAuthenticatorDataLength' => self::DEFAULT_MAX_AUTHENTICATOR_DATA_LENGTH,
+            'maxSignatureLength' => self::DEFAULT_MAX_SIGNATURE_LENGTH,
+            'maxPublicKeyLength' => self::DEFAULT_MAX_PUBLIC_KEY_LENGTH,
+            'maxCborDepth' => self::DEFAULT_MAX_CBOR_DEPTH
+        );
+        
+        return isset($defaults[$key]) ? $defaults[$key] : 0;
+    }
     
     /**
      * 验证注册响应
@@ -55,7 +86,8 @@ class WebAuthn
         }
         
         // 验证 challenge 长度
-        if (strlen($challenge) > self::MAX_CHALLENGE_LENGTH) {
+        $maxChallengeLength = self::getSecurityConfig('maxChallengeLength');
+        if (strlen($challenge) > $maxChallengeLength) {
             throw new \Exception('Challenge too long');
         }
         
@@ -71,7 +103,8 @@ class WebAuthn
         
         // 1. 解码 clientDataJSON（添加长度限制）
         $clientDataJSONBase64 = $response['clientDataJSON'];
-        if (strlen($clientDataJSONBase64) > self::MAX_CLIENT_DATA_LENGTH * 2) {
+        $maxClientDataLength = self::getSecurityConfig('maxClientDataLength');
+        if (strlen($clientDataJSONBase64) > $maxClientDataLength * 2) {
             throw new \Exception('ClientDataJSON too long');
         }
         
@@ -80,7 +113,7 @@ class WebAuthn
             throw new \Exception('Failed to decode clientDataJSON');
         }
         
-        if (strlen($clientDataJSON) > self::MAX_CLIENT_DATA_LENGTH) {
+        if (strlen($clientDataJSON) > $maxClientDataLength) {
             throw new \Exception('ClientDataJSON too long');
         }
         
@@ -120,7 +153,8 @@ class WebAuthn
         
         // 5. 解码 attestationObject（添加长度限制）
         $attestationObjectBase64 = $response['attestationObject'];
-        if (strlen($attestationObjectBase64) > self::MAX_ATTESTATION_LENGTH * 2) {
+        $maxAttestationLength = self::getSecurityConfig('maxAttestationLength');
+        if (strlen($attestationObjectBase64) > $maxAttestationLength * 2) {
             throw new \Exception('AttestationObject too long');
         }
         
@@ -129,7 +163,7 @@ class WebAuthn
             throw new \Exception('Failed to decode attestationObject');
         }
         
-        if (strlen($attestationObject) > self::MAX_ATTESTATION_LENGTH) {
+        if (strlen($attestationObject) > $maxAttestationLength) {
             throw new \Exception('AttestationObject too long');
         }
         
@@ -152,7 +186,8 @@ class WebAuthn
             throw new \Exception('AuthData too short');
         }
         
-        if (strlen($authData) > self::MAX_AUTHENTICATOR_DATA_LENGTH) {
+        $maxAuthenticatorDataLength = self::getSecurityConfig('maxAuthenticatorDataLength');
+        if (strlen($authData) > $maxAuthenticatorDataLength) {
             throw new \Exception('AuthData too long');
         }
         
@@ -387,7 +422,8 @@ class WebAuthn
             throw new \Exception('Invalid public key');
         }
         
-        if (strlen($publicKey) > self::MAX_PUBLIC_KEY_LENGTH) {
+        $maxPublicKeyLength = self::getSecurityConfig('maxPublicKeyLength');
+        if (strlen($publicKey) > $maxPublicKeyLength) {
             throw new \Exception('Public key too long');
         }
         
@@ -396,7 +432,8 @@ class WebAuthn
         }
         
         // 验证 challenge 长度
-        if (strlen($challenge) > self::MAX_CHALLENGE_LENGTH) {
+        $maxChallengeLength = self::getSecurityConfig('maxChallengeLength');
+        if (strlen($challenge) > $maxChallengeLength) {
             throw new \Exception('Challenge too long');
         }
         
@@ -411,7 +448,8 @@ class WebAuthn
         
         // 1. 解码 clientDataJSON（添加长度限制）
         $clientDataJSONBase64 = $response['clientDataJSON'];
-        if (strlen($clientDataJSONBase64) > self::MAX_CLIENT_DATA_LENGTH * 2) {
+        $maxClientDataLength = self::getSecurityConfig('maxClientDataLength');
+        if (strlen($clientDataJSONBase64) > $maxClientDataLength * 2) {
             throw new \Exception('ClientDataJSON too long');
         }
         
@@ -420,7 +458,7 @@ class WebAuthn
             throw new \Exception('Failed to decode clientDataJSON');
         }
         
-        if (strlen($clientDataJSON) > self::MAX_CLIENT_DATA_LENGTH) {
+        if (strlen($clientDataJSON) > $maxClientDataLength) {
             throw new \Exception('ClientDataJSON too long');
         }
         
@@ -460,7 +498,8 @@ class WebAuthn
         
         // 5. 解码 authenticatorData（添加长度限制）
         $authenticatorDataBase64 = $response['authenticatorData'];
-        if (strlen($authenticatorDataBase64) > self::MAX_AUTHENTICATOR_DATA_LENGTH * 2) {
+        $maxAuthenticatorDataLength = self::getSecurityConfig('maxAuthenticatorDataLength');
+        if (strlen($authenticatorDataBase64) > $maxAuthenticatorDataLength * 2) {
             throw new \Exception('AuthenticatorData too long');
         }
         
@@ -473,7 +512,7 @@ class WebAuthn
             throw new \Exception('AuthenticatorData too short');
         }
         
-        if (strlen($authenticatorData) > self::MAX_AUTHENTICATOR_DATA_LENGTH) {
+        if (strlen($authenticatorData) > $maxAuthenticatorDataLength) {
             throw new \Exception('AuthenticatorData too long');
         }
         
@@ -508,7 +547,8 @@ class WebAuthn
         
         // 9. 验证签名（添加长度限制）
         $signatureBase64 = $response['signature'];
-        if (strlen($signatureBase64) > self::MAX_SIGNATURE_LENGTH * 2) {
+        $maxSignatureLength = self::getSecurityConfig('maxSignatureLength');
+        if (strlen($signatureBase64) > $maxSignatureLength * 2) {
             throw new \Exception('Signature too long');
         }
         
@@ -517,7 +557,7 @@ class WebAuthn
             throw new \Exception('Failed to decode signature');
         }
         
-        if (strlen($signature) > self::MAX_SIGNATURE_LENGTH) {
+        if (strlen($signature) > $maxSignatureLength) {
             throw new \Exception('Signature too long');
         }
         
@@ -647,7 +687,8 @@ class WebAuthn
                 throw new \Exception('Failed to decode public key');
             }
             
-            if (strlen($publicKeyData) === 0 || strlen($publicKeyData) > self::MAX_PUBLIC_KEY_LENGTH) {
+            $maxPublicKeyLength = self::getSecurityConfig('maxPublicKeyLength');
+            if (strlen($publicKeyData) === 0 || strlen($publicKeyData) > $maxPublicKeyLength) {
                 throw new \Exception('Invalid public key length');
             }
             
@@ -1030,7 +1071,8 @@ class WebAuthn
     private static function decodeCBOR($data, $depth = 0)
     {
         // 防止深度过大导致的栈溢出
-        if ($depth > self::MAX_CBOR_DEPTH) {
+        $maxCborDepth = self::getSecurityConfig('maxCborDepth');
+        if ($depth > $maxCborDepth) {
             throw new \Exception('CBOR nesting too deep');
         }
         

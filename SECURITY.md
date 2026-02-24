@@ -1,495 +1,567 @@
-# Passkey 安全修复和增强报告
+# Passkey 插件安全文档
 
-## 修复日期
-2026年2月23日
-
-## 概述
-本次安全修复针对 Passkey 插件进行了全面的安全加固，修复了关键漏洞，增强了验证流程，提升了系统的整体安全性。
+**最后更新：** 2026年2月24日  
+**当前版本：** v1.0.5
 
 ---
 
-## 🔴 关键安全修复
+## 📋 目录
 
-### 1. CBOR 解码器整数溢出保护（WebAuthn.php）
+- [版本更新记录](#版本更新记录)
+- [安全架构概览](#安全架构概览)
+- [安全模式配置](#安全模式配置)
+- [已知安全加固](#已知安全加固)
+- [安全最佳实践](#安全最佳实践)
+- [漏洞报告流程](#漏洞报告流程)
 
-**问题位置**: `decodeCBORValue()` 方法，第927-931行  
-**问题描述**: 处理64位整数时，在32位系统上使用 `($high << 32) | $low` 会导致整数溢出
+---
 
-**修复方案**:
+## 🔄 版本更新记录
+
+### v1.0.5 (2026-02-24) - 安全配置增强
+
+#### 🎯 核心更新
+
+**1. 可配置安全模式**
+- ✅ 三种预设安全级别：**平衡模式** / **标准模式** / **严格模式**
+- ✅ 每种模式预配置了优化的安全参数组合
+- ✅ 支持自定义模式，可独立调整 10+ 项安全参数
+- ✅ 实时预览当前配置的安全强度和性能影响
+
+**2. RP ID 与 Origin 验证优化**
+- ✅ 移除不安全的动态 Server 变量构造
+- ✅ 强制从站点配置读取 `siteUrl` 作为可信来源
+- ✅ 增强域名格式验证，防止 Host 头注入攻击
+- ✅ 严格模式下强制完全匹配（协议+域名+端口）
+- ✅ 平衡/标准模式支持子域名和端口适配
+
+#### 📊 安全参数可配置项
+
+| 参数类别 | 可配置项 | 用途 |
+|---------|---------|------|
+| **速率限制** | 每小时/IP 最大尝试次数 | 防暴力破解 |
+| **数据长度限制** | Challenge/ClientData/Attestation/Signature 等最大长度 | 防 DoS 攻击 |
+| **会话管理** | Challenge 超时时间 | 防重放攻击 |
+| **验证策略** | Origin 匹配模式（严格/宽松） | 平衡安全性与兼容性 |
+| **CBOR 安全** | 最大解码深度 | 防递归攻击 |
+
+#### 🔧 配置方式
+
+**后台配置界面：**
+```
+控制台 → 插件 → Passkey → 设置 → 安全模式配置
+```
+
+**预设模式对比：**
+
+| 模式 | 适用场景 | 速率限制 | 验证策略 | 性能影响 |
+|------|---------|---------|---------|---------|
+| **平衡** | 个人博客/小型站点 | 宽松 (20/IP) | 宽松 Origin | 极低 |
+| **标准** | 中型站点/企业博客 | 适中 (10/IP) | 标准验证 | 低 |
+| **严格** | 高安全需求场景 | 严格 (5/IP) | 严格匹配 | 中等 |
+| **自定义** | 特殊需求 | 自定义 | 自定义 | 取决于配置 |
+
+#### ⚠️ 安全建议
+
+1. **生产环境推荐使用"标准"或"严格"模式**
+2. **启用 HTTPS 后建议切换到"严格"模式**
+3. **开发环境可使用"平衡"模式方便测试**
+4. **定期检查登录日志，及时调整速率限制参数**
+
+---
+
+### v1.0.4 (2026-02-23) - 信息安全加固
+
+#### 🔒 主要修复
+- ✅ 全面信息脱敏（12 处敏感信息泄露）
+- ✅ 统一错误处理机制（避免差异化攻击）
+- ✅ 增强输入验证（防注入攻击）
+- ✅ 优化错误日志记录（避免日志注入）
+
+---
+
+### v1.0.3 (2026-02-22) - 企业级安全解决方案
+
+#### 🛡️ 核心安全特性
+- ✅ 完整 ES256/RS256 签名验证（PHP OpenSSL 原生实现）
+- ✅ IEEE P1363 ↔ DER 格式自动转换
+- ✅ 基于 Session 的速率限制（防暴力破解）
+- ✅ Challenge 超时验证（防重放攻击）
+- ✅ 签名计数器检测（防克隆认证器）
+- ✅ Origin 严格验证（防域名欺骗）
+- ✅ 全面的数据长度限制（防 DoS 攻击）
+
+---
+
+## 🏗️ 安全架构概览
+
+### 核心安全层
+
+```mermaid
+graph TD
+    A[前端安全层<br/>JavaScript] --> |HTTPS| B[传输安全层<br/>TLS/HTTPS]
+    B --> |POST JSON| C[应用安全层<br/>Action.php]
+    C --> |调用验证| D[验证引擎层<br/>WebAuthn.php]
+    D --> |数据库操作| E[数据持久层<br/>Database]
+    
+    A1[- WebAuthn API 调用<br/>- 浏览器兼容性检测<br/>- 输入预验证] -.-> A
+    B1[- 强制 HTTPS 生产环境<br/>- 防中间人攻击] -.-> B
+    C1[- 速率限制 可配置<br/>- Session 超时验证<br/>- 输入完整性校验<br/>- Origin 验证 可配置严格度<br/>- 凭证重用检查] -.-> C
+    D1[- ClientDataJSON 解析与验证<br/>- AttestationObject 解析<br/>- CBOR 安全解码 深度限制<br/>- COSE Key 提取<br/>- ES256/RS256 签名验证<br/>- IEEE P1363 ↔ DER 转换<br/>- Counter 回滚检测] -.-> D
+    E1[- 凭证存储 公钥/Counter<br/>- 登录日志记录<br/>- 事务保护 防竞态条件] -.-> E
+    
+    style A fill:#e1f5ff,stroke:#01579b,stroke-width:2px
+    style B fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style C fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style D fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style E fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    
+    style A1 fill:#ffffff,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5
+    style B1 fill:#ffffff,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5
+    style C1 fill:#ffffff,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5
+    style D1 fill:#ffffff,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5
+    style E1 fill:#ffffff,stroke:#999,stroke-width:1px,stroke-dasharray: 5 5
+```
+
+### 数据流安全
+
+#### 1. 注册流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant B as 浏览器
+    participant W as WebAuthn API
+    participant D as 设备 TPM/安全芯片
+    participant S as 后端服务器
+    participant DB as 数据库
+    
+    U->>B: 点击注册 Passkey
+    B->>W: 调用 navigator.credentials.create()
+    W->>D: 请求生成密钥对
+    D->>D: 生成公私钥对
+    D->>D: 私钥存储在安全芯片
+    D-->>W: 返回公钥 + 凭证ID
+    W-->>B: 返回认证数据
+    B->>S: 发送注册请求<br/>(公钥 + 凭证ID + 签名)
+    S->>S: 验证签名和数据
+    S->>DB: 存储公钥和凭证信息
+    DB-->>S: 存储成功
+    S-->>B: 注册成功
+    B-->>U: 显示成功提示
+    
+    Note over D: 私钥永不离开设备
+    Note over DB: 只存储公钥，无法推导私钥
+```
+
+#### 2. 登录流程
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant B as 浏览器
+    participant W as WebAuthn API
+    participant D as 设备 TPM/安全芯片
+    participant S as 后端服务器
+    participant DB as 数据库
+    
+    U->>B: 点击 Passkey 登录
+    B->>S: 请求登录 Challenge
+    S->>S: 生成随机 Challenge
+    S-->>B: 返回 Challenge
+    B->>W: 调用 navigator.credentials.get()
+    W->>D: 请求签名 Challenge
+    D->>U: 生物识别验证<br/>(指纹/面容/PIN)
+    U-->>D: 验证通过
+    D->>D: 使用私钥签名 Challenge
+    D-->>W: 返回签名
+    W-->>B: 返回认证数据
+    B->>S: 发送登录请求<br/>(凭证ID + 签名)
+    S->>DB: 查询公钥和 Counter
+    DB-->>S: 返回凭证信息
+    S->>S: 验证签名<br/>检查 Counter 回滚
+    S->>DB: 更新 Counter
+    S-->>B: 登录成功 + Session
+    B-->>U: 跳转到后台
+    
+    Note over D: 私钥签名，无法伪造
+    Note over S: 防重放攻击和克隆检测
+```
+
+---
+
+## 🎛️ 安全模式配置
+
+### 配置入口
+
+在 Typecho 管理后台：
+```
+控制台 → 插件 → Passkey → 设置 → 安全模式配置
+```
+
+### 预设模式详解
+
+#### 🟢 平衡模式（推荐：个人博客）
+
+**特点：** 安全性与易用性平衡，适合低风险场景
+
+| 参数 | 值 | 说明 |
+|------|----|----|
+| 每小时/IP 尝试次数 | 20 | 同一 IP 每小时最多 20 次认证尝试 |
+| 每小时/用户尝试次数 | 30 | 同一用户每小时最多 30 次认证尝试 |
+| Challenge 超时 | 300s (5分钟) | Challenge 有效期 5 分钟 |
+| Origin 验证模式 | 宽松 | 允许子域名和端口差异 |
+| Challenge 最大长度 | 2048 | 允许较长的 Challenge |
+| ClientData 最大长度 | 16384 | 16KB |
+
+**适用场景：**
+- 个人博客
+- 小型站点（日均 PV < 1000）
+- 开发/测试环境
+
+---
+
+#### 🟡 标准模式（推荐：企业博客）
+
+**特点：** 主流安全标准，适合大多数生产环境
+
+| 参数 | 值 | 说明 |
+|------|----|----|
+| 每小时/IP 尝试次数 | 10 | 同一 IP 每小时最多 10 次认证尝试 |
+| 每小时/用户尝试次数 | 20 | 同一用户每小时最多 20 次认证尝试 |
+| Challenge 超时 | 180s (3分钟) | Challenge 有效期 3 分钟 |
+| Origin 验证模式 | 标准 | 验证协议和主域名 |
+| Challenge 最大长度 | 1024 | WebAuthn 标准推荐值 |
+| ClientData 最大长度 | 8192 | 8KB |
+
+**适用场景：**
+- 企业官网/博客
+- 中型站点（日均 PV 1000-10000）
+- 一般生产环境
+
+---
+
+#### 🔴 严格模式（推荐：高安全需求）
+
+**特点：** 最高安全级别，最大化防护强度
+
+| 参数 | 值 | 说明 |
+|------|----|----|
+| 每小时/IP 尝试次数 | 5 | 同一 IP 每小时最多 5 次认证尝试 |
+| 每小时/用户尝试次数 | 10 | 同一用户每小时最多 10 次认证尝试 |
+| Challenge 超时 | 60s (1分钟) | Challenge 有效期 1 分钟 |
+| Origin 验证模式 | 严格 | 完全匹配协议+域名+端口 |
+| Challenge 最大长度 | 512 | 最小安全长度 |
+| ClientData 最大长度 | 4096 | 4KB |
+
+**适用场景：**
+- 金融/支付相关站点
+- 高价值内容管理
+- 已知攻击风险环境
+
+---
+
+#### ⚙️ 自定义模式
+
+**可独立调整的参数：**
+
+| 参数名称 | 默认值 | 范围 | 说明 |
+|---------|--------|------|------|
+| maxAttemptsPerIP | 10 | 1-100 | 每小时每 IP 最大尝试次数 |
+| maxAttemptsPerUser | 20 | 1-100 | 每小时每用户最大尝试次数 |
+| sessionTimeout | 180 | 60-600 | Challenge 超时时间（秒） |
+| maxChallengeLength | 1024 | 256-2048 | Challenge 最大长度（字节） |
+| maxClientDataLength | 8192 | 2048-16384 | ClientDataJSON 最大长度 |
+| maxAttestationLength | 65536 | 16384-131072 | AttestationObject 最大长度 |
+| maxAuthDataLength | 65536 | 16384-131072 | AuthenticatorData 最大长度 |
+| maxSignatureLength | 1024 | 256-2048 | 签名最大长度 |
+| maxPublicKeyLength | 8192 | 2048-16384 | 公钥最大长度 |
+| maxCBORDepth | 10 | 5-20 | CBOR 解码最大深度 |
+| originValidationMode | standard | strict/standard/relaxed | Origin 验证模式 |
+
+**调优建议：**
+1. **速率限制：** 根据站点流量调整，避免误杀正常用户
+2. **超时时间：** 移动网络环境建议 ≥ 180s
+3. **长度限制：** 在安全和兼容性之间平衡
+4. **Origin 验证：** 多域名部署时使用 relaxed，其他时候用 strict
+
+---
+
+## 🛡️ 已知安全加固
+
+### 1. CBOR 解码器整数溢出保护
+
+**位置：** `WebAuthn.php` → `decodeCBORValue()`
+
+**问题：** 32位系统上处理64位整数时可能溢出
+
+**修复：**
 ```php
-// 安全处理64位整数，防止32位系统溢出
+// 安全处理64位整数
 if (PHP_INT_SIZE === 8) {
-    // 64位系统，直接计算
+    // 64位系统直接计算
     $value = ($high << 32) | $low;
-    // 检查是否溢出到负数
-    if ($value < 0) {
-        throw new \Exception('CBOR integer too large for PHP integer');
-    }
 } else {
-    // 32位系统，只接受小于2^32的值
-    if ($high > 0) {
-        throw new \Exception('CBOR 64-bit integer not supported on 32-bit PHP');
+    // 32位系统只接受 < 2^32 的值
+    if ($high !== 0) {
+        throw new \Exception('64-bit integer too large for 32-bit system');
     }
     $value = $low;
 }
 ```
 
-**影响**: 防止恶意构造的 CBOR 数据导致整数溢出，提升系统稳定性
-
 ---
 
-### 2. encodeDERInteger 空字符串Bug修复（WebAuthn.php）
+### 2. DER 编码空字符串处理
 
-**问题位置**: `encodeDERInteger()` 方法，第788-798行  
-**问题描述**: 当 `ltrim()` 移除所有零后，`$value` 可能为空字符串，访问 `$value[0]` 会导致错误
+**位置：** `WebAuthn.php` → `encodeDERInteger()`
 
-**修复方案**:
+**问题：** `ltrim()` 移除所有零后可能导致空字符串错误
+
+**修复：**
 ```php
-// 移除前导零
 $value = ltrim($value, "\x00");
-
-// 如果所有字节都被移除了，表示值为0
 if (strlen($value) === 0) {
-    $value = "\x00";
+    $value = "\x00"; // 值为 0
 } elseif (ord($value[0]) & 0x80) {
-    $value = "\x00" . $value;
+    $value = "\x00" . $value; // 添加符号位
 }
 ```
-
-**影响**: 防止空值导致的运行时错误，确保DER编码的正确性
 
 ---
 
-### 3. WebAuthn 注册验证增强（WebAuthn.php）
+### 3. RP ID 安全构造
 
-**问题位置**: `verifyRegistration()` 方法，第156-202行  
-**改进内容**:
+**位置：** `Action.php` → `getSafeRpId()`
 
-#### 3.1 详细的 Flags 解析
+**v1.0.5 重大改进：**
+
+❌ **旧方法（不安全）：**
 ```php
-$flags = ord($authData[32]);
-$userPresent = ($flags & 0x01) !== 0;      // UP: User Present
-$userVerified = ($flags & 0x04) !== 0;     // UV: User Verified
-$backupEligible = ($flags & 0x08) !== 0;   // BE: Backup Eligible
-$backupState = ($flags & 0x10) !== 0;      // BS: Backup State
-$attestedCredentialData = ($flags & 0x40) !== 0; // AT: Attested Credential Data
-$extensionData = ($flags & 0x80) !== 0;    // ED: Extension Data
+// 直接从 $_SERVER 读取，易受 Host 头注入攻击
+$host = $_SERVER['HTTP_HOST'];
 ```
 
-#### 3.2 AuthenticatorData 结构完整性验证
+✅ **新方法（安全）：**
 ```php
-// 验证基本结构完整性
-$minExpectedLength = 37;
-if ($attestedCredentialData) {
-    $minExpectedLength += 18; // AAGUID(16) + credIdLen(2)
-}
+// 从站点配置读取，避免动态构造
+$options = \Widget\Options::alloc();
+$siteUrl = $options->siteUrl; // 从数据库配置读取
+$host = parse_url($siteUrl, PHP_URL_HOST);
 
-if (strlen($authData) < $minExpectedLength) {
-    throw new \Exception('Authenticator data too short for declared flags');
+// 增强格式验证
+if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9]$/', $host)) {
+    throw new \Exception('Invalid hostname format');
 }
 ```
 
-#### 3.3 凭证ID和公钥验证
+**防御的攻击：**
+- Host 头注入
+- DNS 重绑定
+- 伪造域名欺骗
+
+---
+
+### 4. Origin 验证增强
+
+**位置：** `WebAuthn.php` → `verifyOrigin()`
+
+**v1.0.5 支持三种验证模式：**
+
 ```php
-// 验证凭证ID长度（防止异常大的ID）
-$credIdLength = strlen($credentialIdDecoded);
-if ($credIdLength < 16 || $credIdLength > 1024) {
-    throw new \Exception('Credential ID length out of acceptable range');
+// 严格模式：完全匹配
+if ($mode === 'strict') {
+    return $clientOrigin === $expectedOrigin;
 }
 
-// 验证公钥格式（确保是有效的COSE key）
-$publicKeyDecoded = base64_decode($publicKeyData['publicKey'], true);
-if ($publicKeyDecoded === false || strlen($publicKeyDecoded) < 32) {
-    throw new \Exception('Invalid public key encoding');
+// 标准模式：协议+主域名匹配
+if ($mode === 'standard') {
+    return $clientScheme === $expectedScheme && 
+           $clientHost === $expectedHost;
+}
+
+// 宽松模式：允许子域名和端口差异
+if ($mode === 'relaxed') {
+    return $clientScheme === $expectedScheme && 
+           (isSameDomain($clientHost, $expectedHost));
 }
 ```
 
-#### 3.4 返回更多安全信息
+---
+
+### 5. 凭证重用检查
+
+**位置：** `Action.php` → `registerVerify()`
+
+**防御：** 防止同一凭证 ID 被多次注册
+
 ```php
-return array(
-    'publicKey' => $publicKeyData['publicKey'],
-    'credentialId' => $publicKeyData['credentialId'],
-    'counter' => $counter,
-    'userVerified' => $userVerified,
-    'backupEligible' => $backupEligible,  // 新增
-    'backupState' => $backupState,         // 新增
-    'aaguid' => $publicKeyData['aaguid']   // 新增
+$existingCred = $this->db->fetchRow(
+    $this->db->select()
+        ->from($this->prefix . 'passkey_credentials')
+        ->where('credential_id = ?', $credentialId)
+        ->limit(1)
 );
-```
-
----
-
-### 4. 注册流程安全增强（Action.php）
-
-#### 4.1 输入验证强化
-```php
-// 验证 response 结构完整性
-if (!isset($data['response']['clientDataJSON']) || 
-    !isset($data['response']['attestationObject'])) {
-    $this->error('Missing required response fields');
-    return;
-}
-
-// 验证字段类型
-if (!is_string($data['response']['clientDataJSON']) || 
-    strlen($data['response']['clientDataJSON']) === 0) {
-    $this->error('Invalid clientDataJSON');
-    return;
-}
-```
-
-#### 4.2 RP ID 安全验证
-```php
-// 验证 rpId 不是IP地址（WebAuthn规范要求使用域名）
-if (filter_var($rpId, FILTER_VALIDATE_IP)) {
-    $this->error('RP ID 不能是IP地址，必须使用域名');
-    return;
-}
-
-// 验证 HTTP_HOST 的安全性（防止Host头注入）
-$httpHost = $_SERVER['HTTP_HOST'];
-if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9](:[0-9]+)?$/', $httpHost)) {
-    $this->error('Invalid HTTP_HOST');
-    return;
-}
-```
-
-#### 4.3 凭证ID重用检查
-```php
-// 检查凭证ID是否已被使用（防止凭证重用攻击）
-$existingCred = $this->db->fetchRow($this->db->select()
-    ->from($this->prefix . 'passkey_credentials')
-    ->where('credential_id = ?', $credentialId)
-    ->limit(1));
 
 if ($existingCred) {
     throw new \Exception('Credential ID already exists');
 }
 ```
 
-#### 4.4 用户注册事务保护
+---
+
+### 6. 会话固定攻击防护
+
+**位置：** `Action.php` → `registerVerify()` & `loginVerify()`
+
+**防御：** 登录成功后重新生成 Session ID
+
 ```php
-// 使用数据库事务确保原子性
+if (session_status() === PHP_SESSION_ACTIVE) {
+    session_regenerate_id(true);
+}
+```
+
+---
+
+### 7. Counter 回滚检测
+
+**位置：** `Action.php` → `loginVerify()`
+
+**防御：** 检测克隆的认证器
+
+```php
+if ($verifyResult['counter'] <= $credential['counter']) {
+    error_log('Passkey: Counter rollback detected - possible cloned authenticator');
+    // 可选：标记凭证为可疑
+}
+
+// 更新 Counter（使用行锁防止并发）
+$this->db->query(
+    $this->db->update($this->prefix . 'passkey_credentials')
+        ->rows(['counter' => $verifyResult['counter']])
+        ->where('id = ?', $credential['id'])
+);
+```
+
+---
+
+### 8. 数据库事务保护
+
+**位置：** `Action.php` → `registerVerify()`
+
+**防御：** 防止用户注册时的竞态条件
+
+```php
+// 开启事务
 if (method_exists($this->db, 'beginTransaction')) {
     $this->db->beginTransaction();
 }
 
-// 再次检查用户名和邮箱是否被占用（防止竞态条件）
-$checkUser = $this->db->fetchRow($this->db->select()
-    ->from($this->prefix . 'users')
-    ->where('name = ? OR mail = ?', $username, $email)
-    ->limit(1));
-
-if ($checkUser) {
+try {
+    // 再次检查用户名/邮箱是否被占用
+    // 创建用户
+    // 绑定凭证
+    
+    if (method_exists($this->db, 'commit')) {
+        $this->db->commit();
+    }
+} catch (\Exception $e) {
     if (method_exists($this->db, 'rollback')) {
         $this->db->rollback();
     }
-    $this->error('用户名或邮箱已被使用');
-    return;
-}
-```
-
-#### 4.5 会话固定攻击防护
-```php
-// 重新生成 session ID 防止会话固定攻击
-if (session_status() === PHP_SESSION_ACTIVE) {
-    session_regenerate_id(true);
-}
-
-// 登录成功后再次重新生成 session ID
-if ($userWidget->simpleLogin($userId, false, $expire)) {
-    if (session_status() === PHP_SESSION_ACTIVE) {
-        session_regenerate_id(true);
-    }
+    throw $e;
 }
 ```
 
 ---
 
-### 5. 登录验证安全增强（Action.php）
+## 📖 安全最佳实践
 
-#### 5.1 响应数据验证
-```php
-// 验证 response 结构完整性
-if (!isset($data['response']['clientDataJSON']) || 
-    !isset($data['response']['authenticatorData']) || 
-    !isset($data['response']['signature'])) {
-    $this->error('Missing required response fields');
-    return;
-}
+### 部署前检查清单
 
-// 验证响应字段类型
-if (!is_string($data['response']['clientDataJSON']) || 
-    !is_string($data['response']['authenticatorData']) || 
-    !is_string($data['response']['signature'])) {
-    $this->error('Invalid response field types');
-    return;
-}
+- [ ] **HTTPS 已启用**（生产环境强制要求）
+- [ ] **OpenSSL 扩展已安装** (`php -m | grep openssl`)
+- [ ] **Session 配置安全** (`session.cookie_httponly = 1`, `session.cookie_secure = 1`)
+- [ ] **站点 URL 配置正确** (Typecho 设置 → 站点地址)
+- [ ] **安全模式已选择** (标准/严格模式推荐用于生产)
+- [ ] **RP ID 配置正确** (通常为站点主域名)
+- [ ] **备份数据库** (升级前备份凭证表)
+
+### 生产环境推荐配置
+
+```
+安全模式：标准模式 或 严格模式
+RP ID：example.com (主域名，不含协议)
+允许注册：关闭 (除非有公开注册需求)
+Origin 验证：严格模式 (strict)
+HTTPS：强制启用
 ```
 
-#### 5.2 Counter 并发更新保护
-```php
-// 锁定该行，防止并发更新
-$this->db->query(
-    $this->db->update($this->prefix . 'passkey_credentials')
-        ->rows(array(
-            'counter' => $newCounter,
-            'last_used' => time()
-        ))
-        ->where('id = ? AND counter <= ?', $credential['id'], $newCounter)
-);
+### 监控与审计
 
-// 验证更新是否成功
-$affected = $this->db->getAffectedRows();
-if ($affected === 0) {
-    error_log('Passkey: Counter update conflict detected');
-}
-```
+1. **定期检查登录日志**
+   - 路径：Passkey 管理 → 登录记录
+   - 关注：异常 IP、失败尝试激增
 
-#### 5.3 详细的安全日志
-```php
-// 记录失败的登录尝试（详细日志）
-error_log('Passkey login verification failed for user ' . $credential['user_id'] . 
-         ': ' . $e->getMessage() . 
-         ' | IP: ' . $this->request->getIp() . 
-         ' | UA: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'));
+2. **审计速率限制触发**
+   - 查看服务器错误日志：`/var/log/php-fpm/error.log`
+   - 搜索关键词：`Rate limit exceeded`
 
-// 记录成功登录事件
-error_log('Passkey: User logged in successfully - User ID: ' . $user['uid'] . 
-         ', IP: ' . $this->request->getIp() . 
-         ', Credential ID: ' . substr($credentialId, 0, 20) . '...');
-```
+3. **Counter 回滚告警**
+   - 搜索关键词：`Counter rollback detected`
+   - 出现时立即检查用户凭证
 
-#### 5.4 防重放攻击
-```php
-// 清除登录挑战（防止重放攻击）
-unset($_SESSION['passkey_login_challenge']);
-unset($_SESSION['passkey_login_challenge_time']);
-```
+### 安全维护
+
+- **定期更新插件** (关注 GitHub Releases)
+- **定期备份凭证数据** (`passkey_credentials` 表)
+- **监控 PHP 错误日志** (及时发现异常)
+- **定期清理过期登录日志** (可选，减少数据库负担)
 
 ---
 
-### 6. 输入验证全面加强（Action.php）
+## 🔍 漏洞报告流程
 
-#### 6.1 用户名验证
-```php
-// 验证用户名长度（与前端保持一致）
-if (strlen($userName) < 3 || strlen($userName) > 32) {
-    $this->error('用户名长度必须在 3-32 个字符之间');
-    return;
-}
+### 如何报告安全漏洞
 
-// 验证用户名格式（必须以字母开头）
-if (!preg_match('/^[a-zA-Z][a-zA-Z0-9_]{2,31}$/', $userName)) {
-    $this->error('用户名只能包含字母、数字和下划线，必须以字母开头');
-    return;
-}
-```
+如果您发现了 Passkey 插件的安全漏洞，请通过以下方式报告：
 
-#### 6.2 邮箱验证增强
-```php
-// 基本格式验证
-if (!filter_var($userEmail, FILTER_VALIDATE_EMAIL)) {
-    $this->error('请输入有效的邮箱地址');
-    return;
-}
+1. **优先级高：** 发送邮件至 [security@garfieldtom.cool](mailto:security@garfieldtom.cool)
+2. **备用方式：** 在 GitHub 创建 Private Security Advisory
+3. **禁止公开：** 请勿在公开 Issue 中披露安全细节
 
-// 长度验证
-if (strlen($userEmail) > 200 || strlen($userEmail) < 5) {
-    $this->error('邮箱地址长度不合理');
-    return;
-}
+### 报告应包含的信息
 
-// 验证邮箱域名部分
-$emailParts = explode('@', $userEmail);
-if (count($emailParts) !== 2 || empty($emailParts[0]) || empty($emailParts[1])) {
-    $this->error('邮箱格式不正确');
-    return;
-}
-```
+- 漏洞描述（详细说明漏洞原理）
+- 影响范围（哪些版本受影响）
+- 复现步骤（PoC 代码或操作流程）
+- 严重性评估（您的主观判断）
+- 修复建议（可选）
 
-#### 6.3 凭证ID验证增强
-```php
-// 类型检查
-if (!is_string($credentialId)) {
-    return false;
-}
+### 响应时间
 
-// Base64 编码检查（允许标准 base64 和 base64url）
-if (!preg_match('/^[A-Za-z0-9+\/=_-]+$/', $credentialId)) {
-    return false;
-}
+- **确认收到：** 24 小时内
+- **初步评估：** 72 小时内
+- **修复发布：** 7-14 天内（取决于严重性）
 
-// 尝试解码以验证有效性
-$decoded = base64_decode($credentialId, true);
-if ($decoded === false) {
-    return false;
-}
+### 致谢
 
-// 验证解码后的长度合理性
-$decodedLength = strlen($decoded);
-if ($decodedLength < 16 || $decodedLength > 1024) {
-    return false;
-}
-```
+我们会在修复发布后公开致谢安全研究人员（除非您要求匿名）。
 
 ---
 
-### 7. 公钥提取安全增强（WebAuthn.php）
+## 📚 参考资料
 
-#### 7.1 字段提取验证
-```php
-// 提取 AAGUID
-$aaguid = substr($authData, $offset, 16);
-if (strlen($aaguid) !== 16) {
-    throw new \Exception('Failed to extract AAGUID');
-}
-
-// 提取凭证ID长度
-$credIdLengthBytes = substr($authData, $offset, 2);
-if (strlen($credIdLengthBytes) !== 2) {
-    throw new \Exception('Failed to extract credential ID length');
-}
-```
-
-#### 7.2 防止整数溢出
-```php
-// 验证 credentialId 长度合理性（防止整数溢出攻击）
-if ($credIdLength === 0) {
-    throw new \Exception('Credential ID length cannot be zero');
-}
-
-if ($credIdLength > 1024) {
-    throw new \Exception('Invalid credential ID length: too large');
-}
-```
-
-#### 7.3 COSE 公钥验证
-```php
-// 尝试解析COSE公钥以验证其格式
-try {
-    $parsedKey = self::decodeCOSEKey($publicKeyData);
-    if (!$parsedKey || !is_array($parsedKey)) {
-        throw new \Exception('Invalid COSE key format');
-    }
-} catch (\Exception $e) {
-    throw new \Exception('Failed to parse COSE key: ' . $e->getMessage());
-}
-```
+- [WebAuthn 规范 (W3C)](https://www.w3.org/TR/webauthn-2/)
+- [FIDO2 标准 (FIDO Alliance)](https://fidoalliance.org/fido2/)
+- [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- [PHP OpenSSL 文档](https://www.php.net/manual/en/book.openssl.php)
 
 ---
 
-### 8. DER 编码安全增强（WebAuthn.php）
+## 📄 许可证
 
-#### 8.1 encodeDERLength 输入验证
-```php
-// 验证输入
-if (!is_int($length) || $length < 0) {
-    throw new \Exception('DER length must be a non-negative integer');
-}
+本插件遵循 MIT 许可证开源。
 
-// 防止编码太长（DER规范限制）
-if (strlen($encoded) > 4) {
-    throw new \Exception('DER length too large');
-}
-```
-
----
-
-### 9. 防止信息泄露
-
-#### 9.1 统一错误消息
-```php
-// 使用统一错误信息，防止用户名枚举攻击
-if ($existingUser || $existingEmail) {
-    error_log('Passkey: Registration attempt with existing username or email - ' .
-             'IP: ' . $this->request->getIp() . 
-             ', Username: ' . $userName . 
-             ', Email: ' . substr($userEmail, 0, 3) . '***');
-    
-    $this->error('该用户名或邮箱不可用，请选择其他用户名或邮箱。');
-    return;
-}
-```
-
----
-
-### 10. Challenge 生成增强（Action.php）
-
-```php
-/**
- * 生成随机 challenge
- * 使用安全的随机数生成器
- */
-private function generateChallenge()
-{
-    try {
-        // 生成32字节（256位）的强随机数
-        $bytes = random_bytes(32);
-        
-        // 转换为 base64url 编码
-        return rtrim(strtr(base64_encode($bytes), '+/', '-_'), '=');
-    } catch (\Exception $e) {
-        error_log('Passkey: Failed to generate challenge: ' . $e->getMessage());
-        throw new \Exception('Failed to generate secure challenge');
-    }
-}
-```
-
----
-
-## 📊 修复统计
-
-- **关键安全漏洞修复**: 3个
-- **安全验证增强**: 15处
-- **输入验证改进**: 10处
-- **错误处理优化**: 8处
-- **日志记录增强**: 6处
-- **代码注释完善**: 所有关键方法
-
----
-
-## 🔒 安全等级提升
-
-### 修复前
-- OWASP 风险等级: **中-高**
-- 主要问题: 整数溢出、输入验证不足、信息泄露
-
-### 修复后
-- OWASP 风险等级: **低**
-- 改进: 完整的输入验证、防重放攻击、防信息泄露、防竞态条件
-
----
-
-## 🧪 建议测试
-
-1. **整数溢出测试**: 在32位PHP环境测试CBOR解码
-2. **边界值测试**: 测试空字符串、超长字符串等边界情况
-3. **并发测试**: 测试多个并发注册/登录请求
-4. **恶意输入测试**: 测试各种格式的非法输入
-5. **会话管理测试**: 测试会话固定攻击防护
-
----
-
-## 📝 注意事项
-
-1. 所有修复均向后兼容
-2. 没有破坏现有功能
-3. 增强的验证可能会拒绝一些边界情况的输入
-4. 建议在生产环境部署前进行全面测试
-
----
-
-## 🔄 后续建议
-
-1. 定期审计代码安全性
-2. 添加自动化安全测试
-3. 监控实际使用中的安全事件
-4. 考虑添加速率限制的持久化存储
-5. 考虑添加更详细的安全审计日志
-
----
-
-**修复完成日期**: 2026年2月23日  
-**修复人员**: little-gt & little-AI 安全审计系统  
-**版本**: 1.0.3.rc5 → 1.0.3.rc5-secure
+**Made with ❤️ by GARFIELDTOM**

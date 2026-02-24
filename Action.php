@@ -22,11 +22,11 @@ class Action extends Widget implements ActionInterface
     private $db;
     private $prefix;
     
-    // 安全常量
-    const MAX_ATTEMPTS_PER_HOUR = 20;      // 每小时最大尝试次数
-    const MAX_ATTEMPTS_PER_IP = 10;        // 每个 IP 每小时最大尝试次数
-    const SESSION_TIMEOUT = 300;            // Session 超时时间（5分钟）
-    const MAX_CREDENTIAL_ID_LENGTH = 512;  // 凭证 ID 最大长度
+    // 默认安全常量（当配置不可用时使用）
+    const DEFAULT_MAX_ATTEMPTS_PER_HOUR = 20;       // 每小时每个用户的最大尝试次数
+    const DEFAULT_MAX_ATTEMPTS_PER_IP = 10;         // 每小时每个 IP 的最大尝试次数
+    const DEFAULT_SESSION_TIMEOUT = 300;            // 会话超时时间（秒）
+    const DEFAULT_MAX_CREDENTIAL_ID_LENGTH = 512;   // 凭证 ID 最大长度（Base64 编码后的长度，实际二进制长度更短）
     
     // 错误代码常量
     const ERR_VALIDATION = 'ERR_VALIDATION';           // 输入验证错误
@@ -44,6 +44,33 @@ class Action extends Widget implements ActionInterface
         parent::__construct($request, $response, $params);
         $this->db = \Typecho\Db::get();
         $this->prefix = $this->db->getPrefix();
+    }
+    
+    /**
+     * 获取安全配置参数
+     */
+    private function getSecurityConfig($key)
+    {
+        try {
+            $options = Options::alloc();
+            $plugin = $options->plugin('Passkey');
+            
+            if ($plugin && isset($plugin->$key)) {
+                return (int)$plugin->$key;
+            }
+        } catch (\Exception $e) {
+            // 配置不可用，使用默认值
+        }
+        
+        // 返回默认值
+        $defaults = array(
+            'maxAttemptsPerHour' => self::DEFAULT_MAX_ATTEMPTS_PER_HOUR,
+            'maxAttemptsPerIp' => self::DEFAULT_MAX_ATTEMPTS_PER_IP,
+            'sessionTimeout' => self::DEFAULT_SESSION_TIMEOUT,
+            'maxCredentialIdLength' => self::DEFAULT_MAX_CREDENTIAL_ID_LENGTH
+        );
+        
+        return isset($defaults[$key]) ? $defaults[$key] : 0;
     }
     
     /**
@@ -282,7 +309,7 @@ class Action extends Widget implements ActionInterface
         }
         
         $rpName = $plugin->rpName ?: 'My Website';
-        $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
+        $rpId = $this->getSafeRpId();
         
         // 验证 rpId 格式
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
@@ -424,7 +451,7 @@ class Action extends Widget implements ActionInterface
         // 获取配置
         $options = Options::alloc();
         $plugin = $options->plugin('Passkey');
-        $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
+        $rpId = $this->getSafeRpId();
         
         // 验证 RP ID 格式（严格的域名格式检查）
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
@@ -440,18 +467,8 @@ class Action extends Widget implements ActionInterface
             return;
         }
         
-        // 构造 origin（更安全的方式）
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        
-        // 验证 HTTP_HOST 的安全性（防止Host头注入）
-        $httpHost = $_SERVER['HTTP_HOST'];
-        if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9](:[0-9]+)?$/', $httpHost)) {
-            error_log('[Passkey][ERROR] Invalid HTTP_HOST: ' . substr($httpHost, 0, 50) . ' - ErrCode: ' . self::ERR_VALIDATION);
-            $this->error('HTTP_HOST 无效', self::ERR_VALIDATION);
-            return;
-        }
-        
-        $origin = $protocol . '://' . $httpHost;
+        // 构造 origin（从站点配置安全获取）
+        $origin = $this->getSafeOrigin();
         
         // 使用 WebAuthn 类进行完整验证
         try {
@@ -489,9 +506,10 @@ class Action extends Widget implements ActionInterface
             }
             
             // Base64 编码后的长度检查（预防 MySQL 截断）
-            if (strlen($credentialId) > self::MAX_CREDENTIAL_ID_LENGTH) {
+            $maxCredentialIdLength = $this->getSecurityConfig('maxCredentialIdLength');
+            if (strlen($credentialId) > $maxCredentialIdLength) {
                 error_log('[Passkey][ERROR] Credential ID exceeds maximum length (' . strlen($credentialId) . ' > ' . 
-                         self::MAX_CREDENTIAL_ID_LENGTH . ') - ErrCode: ' . self::ERR_CREDENTIAL_LENGTH);
+                         $maxCredentialIdLength . ') - ErrCode: ' . self::ERR_CREDENTIAL_LENGTH);
                 throw new \Exception('Credential ID too long');
             }
             
@@ -672,7 +690,7 @@ class Action extends Widget implements ActionInterface
         $options = Options::alloc();
         $plugin = $options->plugin('Passkey');
         
-        $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
+        $rpId = $this->getSafeRpId();
         
         // 验证 RP ID
         if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
@@ -808,7 +826,7 @@ class Action extends Widget implements ActionInterface
             // 获取配置
             $options = Options::alloc();
             $plugin = $options->plugin('Passkey');
-            $rpId = $plugin->rpId ?: $_SERVER['HTTP_HOST'];
+            $rpId = $this->getSafeRpId();
             
             // 验证 rpId 格式
             if (!preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$/', $rpId)) {
@@ -820,16 +838,8 @@ class Action extends Widget implements ActionInterface
                 throw new \Exception('RP ID cannot be an IP address');
             }
             
-            // 构造 origin（安全验证）
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            
-            // 验证 HTTP_HOST 的安全性
-            $httpHost = $_SERVER['HTTP_HOST'];
-            if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*[a-zA-Z0-9](:[0-9]+)?$/', $httpHost)) {
-                throw new \Exception('Invalid HTTP_HOST');
-            }
-            
-            $origin = $protocol . '://' . $httpHost;
+            // 构造 origin（从站点配置安全获取）
+            $origin = $this->getSafeOrigin();
             
             // 使用 WebAuthn 类进行完整验证
             try {
@@ -1201,12 +1211,14 @@ class Action extends Widget implements ActionInterface
             }
         }
         
-        if ($globalCount >= self::MAX_ATTEMPTS_PER_HOUR) {
+        $maxAttemptsPerHour = $this->getSecurityConfig('maxAttemptsPerHour');
+        if ($globalCount >= $maxAttemptsPerHour) {
             error_log('[Passkey][WARNING] Rate limit exceeded (global)');
             return false;
         }
         
-        if ($ipCount >= self::MAX_ATTEMPTS_PER_IP) {
+        $maxAttemptsPerIp = $this->getSecurityConfig('maxAttemptsPerIp');
+        if ($ipCount >= $maxAttemptsPerIp) {
             error_log('[Passkey][WARNING] Rate limit exceeded for IP: ' . $ip);
             return false;
         }
@@ -1229,7 +1241,8 @@ class Action extends Widget implements ActionInterface
         }
         
         $elapsed = time() - $_SESSION[$sessionKey . '_time'];
-        if ($elapsed > self::SESSION_TIMEOUT) {
+        $sessionTimeout = $this->getSecurityConfig('sessionTimeout');
+        if ($elapsed > $sessionTimeout) {
             unset($_SESSION[$sessionKey]);
             unset($_SESSION[$sessionKey . '_time']);
             return false;
@@ -1271,7 +1284,8 @@ class Action extends Widget implements ActionInterface
         }
         
         // 长度检查
-        if (strlen($credentialId) === 0 || strlen($credentialId) > self::MAX_CREDENTIAL_ID_LENGTH) {
+        $maxCredentialIdLength = $this->getSecurityConfig('maxCredentialIdLength');
+        if (strlen($credentialId) === 0 || strlen($credentialId) > $maxCredentialIdLength) {
             return false;
         }
         
@@ -1336,6 +1350,57 @@ class Action extends Widget implements ActionInterface
             'success' => true,
             'data' => $data
         ));
+    }
+    
+    /**
+     * 从站点URL安全地获取 RP ID（域名）
+     * 
+     * @return string 域名（不含协议和路径）
+     */
+    private function getSafeRpId()
+    {
+        $options = Options::alloc();
+        $plugin = $options->plugin('Passkey');
+        
+        // 优先使用配置的 rpId
+        if (!empty($plugin->rpId)) {
+            return $plugin->rpId;
+        }
+        
+        // 从站点 URL 中提取域名
+        $host = parse_url($options->siteUrl, PHP_URL_HOST);
+        if ($host) {
+            return $host;
+        }
+        
+        // 降级方案：使用 localhost（仅开发环境）
+        error_log('[Passkey][WARNING] Unable to extract host from siteUrl, using localhost');
+        return 'localhost';
+    }
+    
+    /**
+     * 从站点URL安全地获取 Origin
+     * 
+     * @return string 完整的 origin（包含协议和域名）
+     */
+    private function getSafeOrigin()
+    {
+        $options = Options::alloc();
+        $siteUrl = rtrim($options->siteUrl, '/');
+        
+        // 确保 URL 包含协议
+        if (!preg_match('/^https?:\/\//i', $siteUrl)) {
+            error_log('[Passkey][WARNING] siteUrl missing protocol, adding https://');
+            $siteUrl = 'https://' . $siteUrl;
+        }
+        
+        // 提取协议和主机（不含路径）
+        $parsed = parse_url($siteUrl);
+        $scheme = $parsed['scheme'] ?? 'https';
+        $host = $parsed['host'] ?? 'localhost';
+        $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+        
+        return $scheme . '://' . $host . $port;
     }
     
     /**

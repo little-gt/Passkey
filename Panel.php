@@ -23,7 +23,7 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.0.4'; // 与 Plugin.php 中的版本号保持一致
+$pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -452,7 +452,6 @@ $pluginVersion = '1.0.4'; // 与 Plugin.php 中的版本号保持一致
             max-width: 500px;
             padding: 16px 20px;
             background: white;
-            border-radius: 8px;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
             display: flex;
             align-items: center;
@@ -505,7 +504,6 @@ $pluginVersion = '1.0.4'; // 与 Plugin.php 中的版本号保持一致
             align-items: center;
             gap: 6px;
             padding: 4px 12px;
-            border-radius: 12px;
             font-size: 12px;
             font-weight: 500;
         }

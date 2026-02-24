@@ -2,12 +2,16 @@
 
 一个为 Typecho 博客系统提供企业级 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。
 
+**v1.0.5 安全更新：** 
+- 支持安全模式选择与参数配置（平衡/标准/严格三种预设，可自定义调优）
+- 优化 RP ID 和 Origin 验证逻辑，避免不安全的动态构造，增强域名验证安全性
+
 **v1.0.4 安全更新：** 全面信息脱敏、错误处理统一、增强输入验证，修复 12 处信息泄露问题。在 v1.0.3 企业级安全解决方案基础上进一步强化防护。
 
-![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.4-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
-![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
-![PHP](https://img.shields.io/badge/PHP-7.0+-777BB4?style=for-the-badge&logo=php&logoColor=white)
+![Passkey Logo](https://img.shields.io/badge/Passkey-v1.0.5-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
+![Typecho](https://img.shields.io/badge/Typecho-1.0+-orange?style=for-the-badge)
+![PHP](https://img.shields.io/badge/PHP-7.4+-777BB4?style=for-the-badge&logo=php&logoColor=white)
 
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
@@ -20,6 +24,7 @@
 
 ### 后台插件设置
 ![插件设置页面](screenshots/screenshot1.png)
+![插件设置页面](screenshots/screenshot4.png)
 *配置注入模式、RP 信息和注册选项*
 
 ### Passkey 管理界面
@@ -67,23 +72,110 @@
 
 ## 🔐 工作原理
 
-### 注册阶段
-1. 用户在后台"Passkey 管理"页面添加凭证
-2. 系统生成公私钥对，私钥存储在用户设备（TPM、安全芯片）
-3. 公钥存储在服务器数据库
+### 注册流程（已登录用户添加凭证）
 
-### 登录阶段
-1. 用户点击"使用 Passkey 登录"
-2. 浏览器调用设备认证（指纹/面容/PIN）
-3. 使用存储的私钥签名挑战
-4. 服务器验证签名后自动登录
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant B as 浏览器
+    participant W as WebAuthn API
+    participant D as 设备安全芯片
+    participant S as 服务器
+    participant DB as 数据库
+    
+    U->>B: 后台点击"添加新凭证"
+    B->>S: 请求注册选项
+    S->>S: 生成 Challenge
+    S-->>B: 返回注册参数
+    B->>W: navigator.credentials.create()
+    W->>D: 请求生成密钥对
+    D->>U: 生物识别验证
+    U-->>D: 指纹/面容/PIN
+    D->>D: 生成公私钥对
+    Note over D: 私钥永不离开设备
+    D-->>W: 返回公钥 + 凭证ID
+    W-->>B: 返回认证数据
+    B->>S: 提交注册数据
+    S->>S: 验证签名和 Origin
+    S->>DB: 存储公钥和凭证
+    DB-->>S: 存储成功
+    S-->>B: 注册成功
+    B-->>U: 显示成功提示
+```
 
-### 注册流程（新用户）
-1. 用户在登录页点击"使用 Passkey 登录"
-2. 系统检测到该设备尚无凭证，提示是否创建新账户
-3. 用户填写注册信息（用户名、邮箱、昵称）
-4. 用户提交信息后，使用设备生物识别创建 Passkey 凭证
-5. 系统创建账户并自动登录
+### 登录流程（使用 Passkey 登录）
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant B as 浏览器
+    participant W as WebAuthn API
+    participant D as 设备安全芯片
+    participant S as 服务器
+    participant DB as 数据库
+    
+    U->>B: 点击"使用 Passkey 登录"
+    B->>S: 请求登录 Challenge
+    S->>S: 生成随机 Challenge
+    S-->>B: 返回 Challenge 和参数
+    B->>W: navigator.credentials.get()
+    W->>D: 请求签名
+    D->>U: 生物识别验证
+    U-->>D: 指纹/面容/PIN
+    D->>D: 使用私钥签名 Challenge
+    D-->>W: 返回签名数据
+    W-->>B: 返回认证响应
+    B->>S: 提交签名和凭证ID
+    S->>DB: 查询公钥
+    DB-->>S: 返回公钥和 Counter
+    S->>S: 验证签名
+    S->>S: 检查 Counter 回滚
+    S->>DB: 更新 Counter
+    S->>DB: 记录登录日志
+    S-->>B: 登录成功 + Session
+    B-->>U: 跳转到后台
+    
+    Note over S: 防重放攻击<br/>克隆检测
+```
+
+### 新用户注册流程
+
+```mermaid
+sequenceDiagram
+    participant U as 新用户
+    participant B as 浏览器
+    participant W as WebAuthn API
+    participant D as 设备安全芯片
+    participant S as 服务器
+    participant DB as 数据库
+    
+    U->>B: 登录页点击"使用 Passkey 登录"
+    B->>S: 尝试获取登录选项
+    S-->>B: 检测到新设备
+    B-->>U: 显示注册表单
+    U->>B: 填写用户信息<br/>(用户名/邮箱/昵称)
+    B->>S: 提交注册信息
+    S->>S: 验证用户名邮箱
+    S->>S: 生成 Challenge
+    S-->>B: 返回注册参数
+    B->>W: navigator.credentials.create()
+    W->>D: 请求生成密钥对
+    D->>U: 生物识别验证
+    U-->>D: 指纹/面容/PIN
+    D->>D: 生成公私钥对
+    D-->>W: 返回公钥 + 凭证ID
+    W-->>B: 返回认证数据
+    B->>S: 提交注册数据
+    S->>DB: 开启事务
+    S->>DB: 创建用户账户
+    S->>DB: 存储 Passkey 凭证
+    S->>DB: 提交事务
+    DB-->>S: 注册成功
+    S-->>B: 自动登录
+    B-->>U: 跳转到后台
+    
+    Note over S: 防竞态条件<br/>事务保护
+```
 
 ## 📋 系统要求
 
@@ -350,18 +442,141 @@ private static function verifyES256($data, $signature, $publicKey) {
 }
 ```
 
-#### 安全配置选项
+#### 安全配置系统（v1.0.5 新增）
 
-插件管理界面提供 6 项可配置的安全参数：
+插件提供完整的安全配置系统，支持三种预设模式和自定义模式：
 
-| 配置项 | 默认值 | 说明 |
-|--------|--------|------|
-| Challenge 超时 | 300 秒 | 单次认证有效期 |
-| 注册频率限制 | 5 次/5 分钟 | 防止批量注册 |
-| 登录频率限制 | 10 次/5 分钟 | 防止暴力破解 |
-| 严格签名计数器 | 警告模式 | 检测克隆认证器 |
-| 严格 Origin 验证 | 宽松模式 | 支持 localhost 开发 |
-| 安全日志 | 启用 | 记录验证失败事件 |
+**三种预设安全模式：**
+
+| 模式 | 适用场景 | 速率限制 | Challenge 超时 | Origin 验证 |
+|------|---------|---------|---------------|------------|
+| **平衡模式** | 个人博客/小型站点 | 20次/IP/小时 | 300秒 (5分钟) | 宽松模式 |
+| **标准模式** | 企业博客/中型站点 | 10次/IP/小时 | 180秒 (3分钟) | 标准验证 |
+| **严格模式** | 高安全需求场景 | 5次/IP/小时 | 60秒 (1分钟) | 严格匹配 |
+
+**可配置的安全参数（10+ 项）：**
+
+| 配置项 | 范围 | 说明 |
+|--------|------|------|
+| **速率限制** |  |  |
+| maxAttemptsPerIP | 1-100 | 每小时每 IP 最大尝试次数 |
+| maxAttemptsPerUser | 1-100 | 每小时每用户最大尝试次数 |
+| **会话管理** |  |  |
+| sessionTimeout | 60-600秒 | Challenge 超时时间，防重放攻击 |
+| **数据长度限制** |  |  |
+| maxChallengeLength | 256-2048 | Challenge 最大长度（字节） |
+| maxClientDataLength | 2048-16384 | ClientDataJSON 最大长度 |
+| maxAttestationLength | 16384-131072 | AttestationObject 最大长度 |
+| maxAuthDataLength | 16384-131072 | AuthenticatorData 最大长度 |
+| maxSignatureLength | 256-2048 | 签名最大长度 |
+| maxPublicKeyLength | 2048-16384 | 公钥最大长度 |
+| **CBOR 安全** |  |  |
+| maxCBORDepth | 5-20 | CBOR 解码最大深度（防递归攻击） |
+| **验证策略** |  |  |
+| originValidationMode | strict/standard/relaxed | Origin 验证模式 |
+
+**配置方式：**
+```
+控制台 → 插件 → Passkey → 设置 → 安全模式配置
+```
+
+**预设模式详细参数：**
+
+```php
+// 平衡模式（适合个人博客）
+maxAttemptsPerIP: 20
+maxAttemptsPerUser: 30
+sessionTimeout: 300
+originValidationMode: 'relaxed'
+maxChallengeLength: 2048
+
+// 标准模式（适合企业博客）
+maxAttemptsPerIP: 10
+maxAttemptsPerUser: 20
+sessionTimeout: 180
+originValidationMode: 'standard'
+maxChallengeLength: 1024
+
+// 严格模式（高安全需求）
+maxAttemptsPerIP: 5
+maxAttemptsPerUser: 10
+sessionTimeout: 60
+originValidationMode: 'strict'
+maxChallengeLength: 512
+```
+
+**安全模式选择建议：**
+- 📝 **开发/测试环境**：平衡模式（宽松限制，方便调试）
+- 🏢 **生产环境（标准）**：标准模式（主流安全标准）
+- 🔒 **高价值场景**：严格模式（最大化安全防护）
+
+更多详细信息请参考 [SECURITY.md](SECURITY.md) 文档。
+
+#### RP ID 与 Origin 验证增强（v1.0.5 重大改进）
+
+**安全问题修复：**
+
+v1.0.5 移除了不安全的动态构造方式，从根本上防止 Host 头注入攻击：
+
+```php
+// ❌ v1.0.4 及之前（不安全）
+$rpId = $_SERVER['HTTP_HOST'];  // 易受 Host 头注入攻击
+
+// ✅ v1.0.5（安全）
+$options = \Widget\Options::alloc();
+$siteUrl = $options->siteUrl;  // 从数据库配置读取
+$rpId = parse_url($siteUrl, PHP_URL_HOST);
+```
+
+**防御的攻击类型：**
+- 🛡️ **Host 头注入**：攻击者无法通过伪造 HTTP_HOST 头欺骗服务器
+- 🛡️ **DNS 重绑定**：强制使用配置的域名，防止 DNS 劫持
+- 🛡️ **域名欺骗**：增强格式验证，只接受合法域名
+
+**Origin 验证三种模式：**
+
+```php
+// 严格模式：完全匹配（协议+域名+端口）
+if ($mode === 'strict') {
+    // https://example.com:443 必须完全匹配
+    return $clientOrigin === $expectedOrigin;
+}
+
+// 标准模式：协议+主域名匹配
+if ($mode === 'standard') {
+    // https://example.com 和 https://example.com:443 视为相同
+    return $clientScheme === $expectedScheme && 
+           $clientHost === $expectedHost;
+}
+
+// 宽松模式：允许子域名和端口差异
+if ($mode === 'relaxed') {
+    // https://admin.example.com 和 https://example.com 都可以
+    return $clientScheme === $expectedScheme && 
+           isSameDomain($clientHost, $expectedHost);
+}
+```
+
+**模式选择建议：**
+
+| 模式 | 场景 | 优点 | 缺点 |
+|------|------|------|------|
+| **Strict** | 单域名生产环境 | 最高安全性 | 端口变化需要重新配置 |
+| **Standard** | 大多数生产环境 | 平衡安全与灵活性 | 不支持子域名 |
+| **Relaxed** | 多域名/开发环境 | 最大灵活性 | 安全性略低 |
+
+**配置示例：**
+
+```php
+// Typecho 后台配置
+站点地址: https://example.com
+RP ID: example.com（自动从站点地址提取）
+
+// 支持的 Origin（根据模式）
+Strict:   https://example.com
+Standard: https://example.com 或 https://example.com:443
+Relaxed:  https://example.com 或 https://admin.example.com
+```
 
 #### CBOR 安全解析
 
@@ -861,54 +1076,150 @@ js/passkey.js?v=1.0.2
 
 ### 插件安全措施
 
-#### 核心安全机制
-- ✅ **完整签名验证** - 服务器端实现 ES256/RS256 算法验证
+#### 核心安全机制（v1.0.5 增强）
+- ✅ **完整签名验证** - 服务器端实现 ES256/RS256 算法验证（PHP OpenSSL）
 - ✅ **格式自动转换** - IEEE P1363 ↔ DER，兼容 OpenSSL
-- ✅ **签名计数器** - 检测认证器克隆攻击
-- ✅ **Challenge 验证** - 可配置超时，一次性使用
-- ✅ **Origin 验证** - 防止域名欺骗
-- ✅ **速率限制** - 基于 Session，防暴力破解
-- ✅ **数据长度限制** - 防止 DoS 攻击
-- ✅ **CBOR 安全解析** - 限制嵌套深度和数据大小
-- ✅ **输入验证** - 用户名、邮箱格式验证
-- ✅ **重复检查** - 防止重复注册凭证
-- ✅ **安全日志** - 完整记录验证失败事件
+- ✅ **签名计数器** - 检测认证器克隆攻击（Counter 回滚检测）
+- ✅ **Challenge 验证** - 可配置超时（60-600秒），一次性使用，防重放攻击
+- ✅ **Origin 验证** - 三种模式（严格/标准/宽松），防域名欺骗
+- ✅ **RP ID 安全构造** - 从站点配置读取，防 Host 头注入
+- ✅ **速率限制** - 基于 Session，可配置限制（1-100次/小时）
+- ✅ **数据长度限制** - 10+ 项可配置限制，防 DoS 攻击
+- ✅ **CBOR 安全解析** - 限制嵌套深度（5-20层）和数据大小
+- ✅ **输入验证** - 用户名、邮箱、凭证 ID 格式严格验证
+- ✅ **重复检查** - 防止重复注册凭证，检测凭证重用
+- ✅ **安全日志** - 完整记录验证失败事件，便于审计
+- ✅ **会话保护** - Session 固定攻击防护，登录后重新生成 ID
+- ✅ **事务保护** - 数据库事务确保原子性，防竞态条件
 
-#### 安全配置模式
+#### 三种安全配置模式（v1.0.5 新增）
 
-**开发环境（宽松）：**
+**🟢 平衡模式（推荐：个人博客）**
 ```
-Challenge 超时: 600 秒
-严格计数器: 警告模式（不阻止登录）
-严格 Origin: 禁用（支持 localhost）
-速率限制: 较宽松
-```
-
-**生产环境（标准）：**
-```
-Challenge 超时: 300 秒
-严格计数器: 警告模式
-严格 Origin: 启用（验证 HTTPS）
-速率限制: 标准
+适用场景：个人博客、小型站点（日均 PV < 1000）
+速率限制：20次/IP/小时
+Challenge 超时：300秒（5分钟）
+Origin 验证：宽松模式（支持子域名和端口差异）
+性能影响：极低
 ```
 
-**高安全环境（严格）：**
+**🟡 标准模式（推荐：企业博客）**
 ```
-Challenge 超时: 120 秒
-严格计数器: 阻止模式（拒绝克隆）
-严格 Origin: 启用
-速率限制: 严格
-安全日志: 强制启用
+适用场景：企业官网、中型站点（日均 PV 1000-10000）
+速率限制：10次/IP/小时
+Challenge 超时：180秒（3分钟）
+Origin 验证：标准模式（验证协议和主域名）
+性能影响：低
+```
+
+**🔴 严格模式（推荐：高安全需求）**
+```
+适用场景：金融/支付相关、高价值内容管理
+速率限制：5次/IP/小时
+Challenge 超时：60秒（1分钟）
+Origin 验证：严格模式（完全匹配协议+域名+端口）
+性能影响：中等
+```
+
+**⚙️ 自定义模式**
+```
+适用场景：特殊需求场景
+配置方式：独立调整 10+ 项安全参数
+性能影响：取决于配置
 ```
 
 ### 部署建议
 
-1. **必须使用 HTTPS**（生产环境）
-2. 根据环境选择合适的安全配置
-3. 启用 CSP 头增强安全性
-4. 定期备份数据库
-5. 定期检查登录记录和安全日志
-6. 保持插件更新
+#### 生产环境部署清单
+
+- [ ] **HTTPS 已启用**（WebAuthn 强制要求，localhost 除外）
+- [ ] **PHP 扩展检查**：`php -m | grep -E 'openssl|mbstring|json|session'`
+- [ ] **站点 URL 配置正确**：Typecho 设置 → 站点地址（必须包含协议）
+- [ ] **RP ID 配置**：通常留空（自动从站点地址提取），或填写主域名
+- [ ] **安全模式选择**：
+  - 个人博客 → 平衡模式
+  - 企业博客 → 标准模式
+  - 高安全需求 → 严格模式
+- [ ] **Origin 验证模式**：
+  - 单域名 → Strict 或 Standard
+  - 多域名/子域名 → Relaxed
+- [ ] **数据库备份**：备份 `typecho_passkey_credentials` 表
+- [ ] **Session 配置**：确保 `session.cookie_httponly = 1` 和 `session.cookie_secure = 1`（HTTPS）
+
+#### 推荐配置组合
+
+**小型个人博客（< 1000 PV/天）**
+```
+安全模式：平衡模式
+RP ID：（留空，自动检测）
+Origin 验证：Relaxed
+允许注册：根据需求
+性能：极佳，无感知
+```
+
+**中型企业博客（1000-10000 PV/天）**
+```
+安全模式：标准模式
+RP ID：example.com
+Origin 验证：Standard
+允许注册：关闭（推荐）
+性能：优秀，低延迟
+```
+
+**高安全场景（金融/支付）**
+```
+安全模式：严格模式
+RP ID：example.com
+Origin 验证：Strict
+允许注册：关闭
+HTTPS：强制启用
+CSP 头：启用
+性能：良好，可接受
+```
+
+#### 安全加固建议
+
+1. **启用 CSP 头**（Content Security Policy）
+   ```php
+   // 在主题 functions.php 中添加
+   header("Content-Security-Policy: default-src 'self';");
+   ```
+
+2. **配置安全 Session**
+   ```php
+   // php.ini 配置
+   session.cookie_httponly = 1
+   session.cookie_secure = 1  // HTTPS 环境
+   session.cookie_samesite = Strict
+   ```
+
+3. **定期备份凭证数据**
+   ```bash
+   # 每日备份凭证表
+   mysqldump -u user -p database typecho_passkey_credentials > backup.sql
+   ```
+
+4. **监控异常登录**
+   ```sql
+   -- 查看最近失败的登录尝试
+   SELECT * FROM typecho_passkey_login_logs 
+   WHERE status = 'failed' 
+   ORDER BY login_time DESC LIMIT 50;
+   
+   -- 统计异常 IP
+   SELECT ip_address, COUNT(*) as attempts 
+   FROM typecho_passkey_login_logs 
+   WHERE status = 'failed' 
+     AND login_time > UNIX_TIMESTAMP(NOW() - INTERVAL 1 HOUR)
+   GROUP BY ip_address 
+   HAVING attempts >= 5
+   ORDER BY attempts DESC;
+   ```
+
+5. **定期更新插件**
+   - 关注 GitHub Releases
+   - 查看 [SECURITY.md](SECURITY.md) 安全公告
+   - 在测试环境先行验证
 
 ### 安全审计
 
@@ -1031,17 +1342,58 @@ v1.0.3 实现了符合 WebAuthn 标准的服务器端签名验证：
 
 这确保了认证过程的真实性和完整性，防止中间人攻击。
 
-### 11. 安全配置如何选择？
+### 11. 安全配置如何选择？（v1.0.5 更新）
 
-**答案：** 根据环境选择！
+**答案：** 根据场景选择预设模式！
 
-- **开发环境**：宽松模式，Challenge 600秒，支持 localhost
-- **生产环境（标准）**：默认配置，平衡安全与可用性
-- **高安全环境**：严格模式，Challenge 120秒，签名计数器阻止模式
+v1.0.5 提供三种预设安全模式和自定义模式：
 
-在插件设置中可以自由调整这些参数。
+- **平衡模式**（个人博客）：
+  - 速率限制：20次/IP/小时
+  - Challenge 超时：300秒（5分钟）
+  - Origin 验证：宽松模式
+  - 适合：个人博客、小型站点
 
-### 12. 什么是签名计数器验证？
+- **标准模式**（企业博客）：
+  - 速率限制：10次/IP/小时
+  - Challenge 超时：180秒（3分钟）
+  - Origin 验证：标准模式
+  - 适合：大多数生产环境
+
+- **严格模式**（高安全）：
+  - 速率限制：5次/IP/小时
+  - Challenge 超时：60秒（1分钟）
+  - Origin 验证：严格匹配
+  - 适合：金融、支付、高价值内容
+
+- **自定义模式**：
+  - 独立调整 10+ 项安全参数
+  - 适合：特殊需求场景
+
+在插件设置中可以直接选择预设模式，或自定义各项参数。
+
+### 12. 什么是 RP ID 和 Origin 验证？（v1.0.5 重点改进）
+
+**答案：** 防止域名欺骗的关键安全机制！
+
+**RP ID（Relying Party ID）：**
+- 标识您的网站，通常是主域名（如 `example.com`）
+- v1.0.5 改进：从站点配置读取，防止 Host 头注入攻击
+- 插件会自动从 Typecho 站点地址提取，无需手动配置
+
+**Origin 验证：**
+- 验证认证请求来自正确的域名
+- 三种验证模式：
+  - **Strict**：完全匹配（`https://example.com`）
+  - **Standard**：协议+域名（忽略端口）
+  - **Relaxed**：允许子域名
+
+**安全建议：**
+- 生产环境：使用 Standard 或 Strict
+- 多域名部署：使用 Relaxed
+- 确保 Typecho「站点地址」配置正确
+
+### 13. 什么是签名计数器验证？
 
 **答案：** 检测克隆的认证器！
 
@@ -1275,4 +1627,4 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 ---
 
-**Made with ❤️ by AI little-gt**
+**Made with ❤️ by GARFIELDTOM & little-AI**

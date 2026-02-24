@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author GARFIELDTOM
- * @version 1.0.4
+ * @version 1.0.5
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.0.4';
+    const VERSION = '1.0.5';
     /**
      * 激活插件方法
      */
@@ -367,18 +367,21 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         $rpName = new Text(
             'rpName',
             NULL,
-            '我的网站',
+            $options->title,
             'Relying Party 名称',
             '这是显示给用户的名称'
         );
         $form->addInput($rpName);
         
+        // 从站点地址中提取域名（去除协议和路径）
+        $siteHost = parse_url($options->siteUrl, PHP_URL_HOST) ?: 'localhost';
+        
         $rpId = new Text(
             'rpId',
             NULL,
-            '',
+            $siteHost,
             'Relying Party ID',
-            '留空则自动使用当前域名，例如：example.com'
+            '默认自动从站点地址提取域名（仅域名部分，不含协议和路径），例如：example.com'
         );
         $form->addInput($rpId);
         
@@ -441,6 +444,398 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             $removeDataDescription
         );
         $form->addInput($removeDataOnUninstall);
+        
+        // 安全模式配置
+        self::addSecurityConfig($form, $plugin);
+    }
+    
+    /**
+     * 添加安全配置选项
+     */
+    private static function addSecurityConfig($form, $plugin)
+    {
+        // 定义三种预设模式
+        $presets = self::getSecurityPresets();
+        
+        // 获取当前配置的安全模式
+        $storedMode = ($plugin && isset($plugin->securityMode)) ? $plugin->securityMode : 'normal';
+        
+        // 检测当前参数是否匹配预设模式
+        $currentMode = '';
+        if ($plugin) {
+            // 检查每个预设模式
+            foreach ($presets as $mode => $params) {
+                $isMatch = true;
+                foreach ($params as $key => $value) {
+                    $currentValue = isset($plugin->$key) ? $plugin->$key : null;
+                    if ($currentValue != $value) {
+                        $isMatch = false;
+                        break;
+                    }
+                }
+                if ($isMatch) {
+                    $currentMode = $mode;
+                    break;
+                }
+            }
+            // 如果没有匹配到任何预设，但有存储的模式，说明是自定义参数
+            if (!$currentMode && $storedMode) {
+                $currentMode = ''; // 不选中任何模式
+            }
+        }
+        
+        // 如果是首次使用，默认选择 normal
+        if (!$plugin) {
+            $currentMode = 'normal';
+        }
+        
+        // 安全模式说明 - 动态切换
+        $securityModeDesc = '<style>
+            .security-mode-info { margin: 15px 0; padding: 15px; border-left: 3px solid #467b96; background: #f8fafc; }
+            .security-mode-info h4 { margin: 0 0 10px 0; color: #1f2937; font-size: 14px; font-weight: 600; }
+            .security-mode-info p { margin: 5px 0; color: #6b7280; font-size: 13px; line-height: 1.6; }
+            .security-mode-info ul { margin: 8px 0; padding-left: 20px; color: #6b7280; font-size: 13px; }
+            .security-mode-info li { margin: 4px 0; }
+            .security-mode-detail { display: none; margin-top: 15px; padding: 12px; background: #f9fafb; }
+            .security-mode-detail.active { display: block; }
+            .security-param-info { display: inline-block; margin-left: 5px; cursor: help; }
+            .security-param-info svg { width: 16px; height: 16px; vertical-align: middle; }
+            .security-param-tooltip { display: none; position: absolute; background: #1f2937; color: #fff; padding: 12px; font-size: 12px; line-height: 1.5; max-width: 400px; z-index: 1000; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+            .security-param-tooltip.show { display: block; }
+            .security-reset-btn { margin-top: 10px; padding: 8px 16px; background: #467b96; color: #fff; border: none; cursor: pointer; font-size: 13px; transition: background 0.2s; }
+            .security-reset-btn:hover { background: #3a6378; }
+            .security-custom-params { margin-top: 15px; padding: 15px; background: #fff; border: 1px solid #e5e7eb; }
+            .security-custom-params h4 { margin: 0 0 10px 0; font-size: 14px; font-weight: 600; }
+            .security-custom-params .param-group { margin: 10px 0; }
+            .security-custom-params label { display: inline-block; min-width: 250px; color: #374151; font-size: 13px; }
+            .security-custom-params input { padding: 6px 10px; border: 1px solid #d1d5db; width: 150px; font-size: 13px; }
+        </style>
+        
+        <div class="security-mode-info">
+            <h4>安全模式说明</h4>
+            <p>选择适合您网站的安全级别，系统将自动配置相关参数。您也可以手动自定义高级参数。</p>
+            
+            <div class="security-mode-detail" id="security-mode-development">
+                <strong style="color:#f59e0b;">开发模式</strong>
+                <ul>
+                    <li>适用于开发和测试环境</li>
+                    <li>较宽松的限制，便于调试</li>
+                    <li>允许更长的数据长度和更多的尝试次数</li>
+                    <li><strong style="color:#dc2626;">不建议在生产环境使用</strong></li>
+                </ul>
+            </div>
+            
+            <div class="security-mode-detail" id="security-mode-normal">
+                <strong style="color:#10b981;">常规模式</strong>
+                <ul>
+                    <li>适用于大多数生产环境</li>
+                    <li>平衡安全性和兼容性</li>
+                    <li>符合 WebAuthn 标准的推荐配置</li>
+                    <li><strong>默认推荐配置</strong></li>
+                </ul>
+            </div>
+            
+            <div class="security-mode-detail" id="security-mode-strict">
+                <strong style="color:#3b82f6;">严格模式</strong>
+                <ul>
+                    <li>适用于高安全要求的环境</li>
+                    <li>最严格的安全限制</li>
+                    <li>更短的超时时间和更少的尝试次数</li>
+                    <li>可能影响用户体验</li>
+                </ul>
+            </div>
+            
+            <button type="button" class="security-reset-btn" onclick="resetSecurityParams()">
+                重置为预设参数
+            </button>
+        </div>
+        
+        <script>
+        (function() {
+            // 切换模式说明
+            function updateSecurityModeDescription() {
+                var mode = document.querySelector(\'input[name="securityMode"]:checked\');
+                if (!mode) return;
+                
+                // 隐藏所有说明
+                document.querySelectorAll(\'.security-mode-detail\').forEach(function(el) {
+                    el.classList.remove(\'active\');
+                });
+                
+                // 显示当前模式的说明
+                var detail = document.getElementById(\'security-mode-\' + mode.value);
+                if (detail) {
+                    detail.classList.add(\'active\');
+                }
+            }
+            
+            // 页面加载时显示当前模式
+            document.addEventListener(\'DOMContentLoaded\', function() {
+                updateSecurityModeDescription();
+                
+                // 监听模式切换
+                document.querySelectorAll(\'input[name="securityMode"]\').forEach(function(radio) {
+                    radio.addEventListener(\'change\', updateSecurityModeDescription);
+                });
+                
+                // 初始化：将可见输入框的值同步到隐藏输入框
+                document.querySelectorAll(\'[data-sync-target]\').forEach(function(input) {
+                    syncParamValue(input);
+                    
+                    // 监听参数变化，如果用户手动修改参数，取消模式选择
+                    input.addEventListener(\'input\', function() {
+                        checkAndClearModeSelection();
+                    });
+                });
+            });
+            
+            // 如果DOM已加载，立即执行
+            if (document.readyState !== \'loading\') {
+                updateSecurityModeDescription();
+            }
+        })();
+        
+        // 同步可见输入框的值到隐藏的表单字段
+        function syncParamValue(visibleInput) {
+            var targetName = visibleInput.getAttribute(\'data-sync-target\');
+            var hiddenInput = document.querySelector(\'input[name="\' + targetName + \'"]\');
+            if (hiddenInput) {
+                hiddenInput.value = visibleInput.value;
+            }
+        }
+        
+        // 检查当前参数是否匹配预设模式，如果不匹配则取消选择
+        function checkAndClearModeSelection() {
+            var presets = ' . json_encode($presets) . ';
+            var selectedMode = document.querySelector(\'input[name="securityMode"]:checked\');
+            
+            if (!selectedMode) return;
+            
+            var currentParams = {};
+            document.querySelectorAll(\'[data-sync-target]\').forEach(function(input) {
+                var paramName = input.getAttribute(\'data-sync-target\');
+                currentParams[paramName] = parseInt(input.value) || input.value;
+            });
+            
+            // 检查当前参数是否匹配所选模式的预设
+            var presetParams = presets[selectedMode.value];
+            var isMatch = true;
+            
+            for (var key in presetParams) {
+                if (currentParams[key] != presetParams[key]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            // 如果不匹配，取消选择
+            if (!isMatch) {
+                selectedMode.checked = false;
+                // 隐藏所有模式说明
+                document.querySelectorAll(\'.security-mode-detail\').forEach(function(el) {
+                    el.classList.remove(\'active\');
+                });
+            }
+        }
+        function resetSecurityParams() {
+            var mode = document.querySelector(\'input[name="securityMode"]:checked\');
+            if (!mode) {
+                alert(\'请先选择安全模式\');
+                return;
+            }
+            
+            var presets = ' . json_encode($presets) . ';
+            var params = presets[mode.value];
+            
+            if (!params) {
+                alert(\'无法获取预设参数\');
+                return;
+            }
+            
+            // 更新可见输入框和隐藏输入框的值
+            Object.keys(params).forEach(function(key) {
+                // 更新可见输入框
+                var visibleInput = document.querySelector(\'#visible-\' + key);
+                if (visibleInput) {
+                    visibleInput.value = params[key];
+                    syncParamValue(visibleInput);
+                }
+                
+                // 直接更新隐藏输入框（双重保险）
+                var hiddenInput = document.querySelector(\'input[name="\' + key + \'"]\');
+                if (hiddenInput) {
+                    hiddenInput.value = params[key];
+                }
+            });
+            
+            alert(\'已重置为 \' + mode.value + \' 模式的预设参数\');
+        }
+        
+        // 参数说明提示
+        function showParamInfo(event, paramName) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            var descriptions = {
+                "maxChallengeLength": "Challenge 是服务器生成的随机字符串，用于防止重放攻击。较长的 Challenge 更安全，但会占用更多带宽。",
+                "maxClientDataLength": "客户端数据（ClientData）包含 origin、challenge 等信息。限制长度可防止恶意客户端发送超大数据。",
+                "maxAttestationLength": "认证对象（AttestationObject）包含认证器数据和公钥。限制长度可防止缓冲区溢出攻击。",
+                "maxAuthenticatorDataLength": "认证器数据包含 RP ID 哈希、标志位、计数器等。限制长度确保数据完整性。",
+                "maxSignatureLength": "签名数据的最大长度。RSA 签名通常为 256-512 字节，ECDSA 签名约为 64-72 字节。",
+                "maxPublicKeyLength": "公钥数据的最大长度。RSA 公钥较大（2048-4096位），ECDSA 公钥较小（256位）。",
+                "maxCborDepth": "CBOR（Concise Binary Object Representation）解码的最大嵌套深度，防止递归攻击。",
+                "maxAttemptsPerHour": "每个用户每小时允许的最大认证尝试次数，防止暴力破解。",
+                "maxAttemptsPerIp": "每个 IP 地址每小时允许的最大尝试次数，防止分布式攻击。",
+                "sessionTimeout": "会话超时时间（秒）。Challenge 生成后必须在此时间内使用，过期则需重新生成。",
+                "maxCredentialIdLength": "凭证 ID 的最大长度。正常情况下为 16-256 字节，限制可防止异常数据。"
+            };
+            
+            var tooltip = document.getElementById(\'security-tooltip\');
+            if (!tooltip) {
+                tooltip = document.createElement(\'div\');
+                tooltip.id = \'security-tooltip\';
+                tooltip.className = \'security-param-tooltip\';
+                document.body.appendChild(tooltip);
+                
+                // 创建全局点击监听器（只创建一次）
+                document.addEventListener(\'click\', function(e) {
+                    // 如果点击的不是 info 图标，则隐藏 tooltip
+                    if (!e.target.closest(\'.security-param-info\')) {
+                        tooltip.className = \'security-param-tooltip\';
+                    }
+                });
+            }
+            
+            tooltip.textContent = descriptions[paramName] || \'参数说明\';
+            tooltip.className = \'security-param-tooltip show\';
+            tooltip.style.left = (event.pageX + 10) + \'px\';
+            tooltip.style.top = (event.pageY + 10) + \'px\';
+        }
+        </script>';
+        
+        // 高级自定义参数
+        $advancedParamsHtml = '<div class="security-custom-params">
+            <h4>高级自定义参数</h4>
+            <p style="color:#6b7280;font-size:13px;margin-bottom:15px;">
+                以下参数会根据所选安全模式自动设置。如需自定义，请修改下方数值后保存。
+                <span style="color:#dc2626;">修改这些参数可能影响系统安全性，请谨慎操作！</span>
+            </p>';
+        
+        // 为每个参数添加说明图标
+        $advancedParamsHtml .= self::generateParamField('maxChallengeLength', 'Challenge 最大长度（字节）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxClientDataLength', 'ClientData 最大长度（字节）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxAttestationLength', 'AttestationObject 最大长度（字节）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxAuthenticatorDataLength', 'AuthenticatorData 最大长度（字节）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxSignatureLength', '签名最大长度（字节）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxPublicKeyLength', '公钥最大长度（字节）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxCborDepth', 'CBOR 解码最大深度', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxAttemptsPerHour', '每小时最大尝试次数（用户）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxAttemptsPerIp', '每小时最大尝试次数（IP）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('sessionTimeout', 'Session 超时时间（秒）', $plugin, $presets, $currentMode);
+        $advancedParamsHtml .= self::generateParamField('maxCredentialIdLength', '凭证 ID 最大长度（字节）', $plugin, $presets, $currentMode);
+        
+        $advancedParamsHtml .= '</div>';
+        
+        // 将高级参数HTML添加到安全模式描述中
+        $securityModeDesc .= $advancedParamsHtml;
+        
+        $securityMode = new Radio(
+            'securityMode',
+            array(
+                'development' => '开发模式（Development）',
+                'normal' => '常规模式（Normal）',
+                'strict' => '严格模式（Strict）'
+            ),
+            $currentMode,
+            '安全模式',
+            $securityModeDesc
+        );
+        $form->addInput($securityMode);
+        
+        // 为每个参数创建隐藏的输入字段（用于表单提交）
+        // 这些字段会与上面HTML中的输入框同步
+        foreach (array_keys($presets['normal']) as $paramKey) {
+            $currentValue = ($plugin && isset($plugin->$paramKey)) ? $plugin->$paramKey : $presets[$currentMode][$paramKey];
+            $paramField = new Text(
+                $paramKey,
+                NULL,
+                $currentValue,
+                '',
+                ''
+            );
+            $paramField->input->setAttribute('style', 'display:none'); // 隐藏，使用上面的自定义HTML
+            $form->addInput($paramField);
+        }
+    }
+    
+    /**
+     * 生成参数字段HTML
+     */
+    private static function generateParamField($key, $label, $plugin, $presets, $currentMode)
+    {
+        $currentValue = ($plugin && isset($plugin->$key)) ? $plugin->$key : $presets[$currentMode][$key];
+        
+        // 使用独特的ID来标识可见的输入框，并通过JavaScript同步到隐藏的表单字段
+        return '<div class="param-group">
+            <label>' . $label . '
+                <a href="#" class="security-param-info" onclick="showParamInfo(event, \'' . $key . '\')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                    </svg>
+                </a>
+            </label>
+            <input type="number" id="visible-' . $key . '" data-sync-target="' . $key . '" value="' . $currentValue . '" min="0" onchange="syncParamValue(this)" oninput="syncParamValue(this)" />
+        </div>';
+    }
+    
+    /**
+     * 获取安全预设配置
+     */
+    public static function getSecurityPresets()
+    {
+        return array(
+            'development' => array(
+                'maxChallengeLength' => 2048,       // 开发模式：更宽松
+                'maxClientDataLength' => 16384,
+                'maxAttestationLength' => 131072,
+                'maxAuthenticatorDataLength' => 131072,
+                'maxSignatureLength' => 2048,
+                'maxPublicKeyLength' => 16384,
+                'maxCborDepth' => 15,
+                'maxAttemptsPerHour' => 50,
+                'maxAttemptsPerIp' => 30,
+                'sessionTimeout' => 600,            // 10分钟
+                'maxCredentialIdLength' => 1024
+            ),
+            'normal' => array(
+                'maxChallengeLength' => 1024,       // 常规模式：平衡
+                'maxClientDataLength' => 8192,
+                'maxAttestationLength' => 65536,
+                'maxAuthenticatorDataLength' => 65536,
+                'maxSignatureLength' => 1024,
+                'maxPublicKeyLength' => 8192,
+                'maxCborDepth' => 10,
+                'maxAttemptsPerHour' => 20,
+                'maxAttemptsPerIp' => 10,
+                'sessionTimeout' => 300,            // 5分钟
+                'maxCredentialIdLength' => 512
+            ),
+            'strict' => array(
+                'maxChallengeLength' => 512,        // 严格模式：最严格
+                'maxClientDataLength' => 4096,
+                'maxAttestationLength' => 32768,
+                'maxAuthenticatorDataLength' => 32768,
+                'maxSignatureLength' => 512,
+                'maxPublicKeyLength' => 4096,
+                'maxCborDepth' => 5,
+                'maxAttemptsPerHour' => 10,
+                'maxAttemptsPerIp' => 5,
+                'sessionTimeout' => 180,            // 3分钟
+                'maxCredentialIdLength' => 256
+            )
+        );
     }
     
     /**
@@ -527,7 +922,7 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                 或使用 Passkey 登录
             </div>
             <button type="button" id="passkey-login-btn" class="btn btn-l w-100" 
-                style="width:100%;padding:10px;font-size:14px;cursor:pointer;background:#4f46e5;color:white;border:1px solid #4338ca;border-radius:4px;transition:all 0.2s ease;">
+                style="width:100%;padding:10px;font-size:14px;cursor:pointer;background:#4f46e5;color:white;border:1px solid #4338ca;transition:all 0.2s ease;">
                 🔐 使用 Passkey 登录
             </button>
         </div>
