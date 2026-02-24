@@ -527,7 +527,7 @@ HTTPS：强制启用
 
 如果您发现了 Passkey 插件的安全漏洞，请通过以下方式报告：
 
-1. **优先级高：** 发送邮件至 [security@garfieldtom.cool](mailto:security@garfieldtom.cool)
+1. **优先级高：** 发送邮件至 [coolerxde@gt.ac.cn](mailto:coolerxde@gt.ac.cn)
 2. **备用方式：** 在 GitHub 创建 Private Security Advisory
 3. **禁止公开：** 请勿在公开 Issue 中披露安全细节
 

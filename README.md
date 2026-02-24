@@ -16,7 +16,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
 
-参与讨论：https://forum.typecho.org/viewtopic.php?p=62489#p62489
+参与讨论：https://forum.typecho.org/viewtopic.php?p=62491#p62491
 
 技术细节：https://blog.csdn.net/qq_43011259/article/details/158292076
 
