@@ -123,7 +123,7 @@ sequenceDiagram
 #### WebAuthn 标准实现
 - **支持的算法：** ES256 (P-256), RS256 (RSA-2048)
 - **签名验证：** 使用 PHP OpenSSL 原生实现
-- **凭证管理：** 支持多设备注册，每个用户最多 10 个凭证
+- **凭证管理：** 支持多设备注册
 - **生物识别：** 利用设备内置的指纹、面容识别等生物特征
 
 #### 安全增强措施
@@ -162,8 +162,8 @@ sequenceDiagram
 
 | 模式 | 适用场景 | 速率限制 | 验证策略 | 性能影响 |
 |------|---------|---------|---------|---------|
-| **平衡** | 个人博客/小型站点 | 宽松 (20/IP) | 宽松 Origin | 极低 |
-| **标准** | 中型站点/企业博客 | 适中 (10/IP) | 标准验证 | 低 |
+| **开发** | 开发/测试环境 | 宽松 (50/IP) | 宽松 Origin | 极低 |
+| **常规** | 个人博客/小型站点 | 适中 (10/IP) | 标准验证 | 低 |
 | **严格** | 高安全需求场景 | 严格 (5/IP) | 严格匹配 | 中等 |
 | **自定义** | 特殊需求 | 自定义 | 自定义 | 取决于配置 |
 
@@ -172,7 +172,7 @@ sequenceDiagram
 | 参数名称 | 默认值 | 范围 | 说明 |
 |---------|--------|------|------|
 | maxAttemptsPerIP | 10 | 1-100 | 每小时每 IP 最大尝试次数 |
-| maxAttemptsPerUser | 20 | 1-100 | 每小时每用户最大尝试次数 |
+| maxAttemptsPerHour | 20 | 1-100 | 每小时每用户最大尝试次数 |
 | sessionTimeout | 180 | 60-600 | Challenge 超时时间（秒） |
 | maxChallengeLength | 1024 | 256-2048 | Challenge 最大长度（字节） |
 | maxClientDataLength | 8192 | 2048-16384 | ClientDataJSON 最大长度 |
@@ -191,12 +191,13 @@ sequenceDiagram
 
 | 端点 | 方法 | 功能 | 权限 |
 |------|------|------|------|
-| `/action/passkey/register/options` | POST | 获取注册选项 | 公开 |
-| `/action/passkey/register/verify` | POST | 验证注册数据 | 公开 |
-| `/action/passkey/login/options` | POST | 获取登录选项 | 公开 |
-| `/action/passkey/login/verify` | POST | 验证登录数据 | 公开 |
-| `/action/passkey/credentials` | GET | 获取用户凭证列表 | 已登录用户 |
-| `/action/passkey/credentials/delete` | POST | 删除凭证 | 已登录用户 |
+| `/action/passkey?do=register-options` | GET/POST | 获取注册选项 | 公开 |
+| `/action/passkey?do=register-verify` | POST | 验证注册数据 | 公开 |
+| `/action/passkey?do=login-options` | GET | 获取登录选项 | 公开 |
+| `/action/passkey?do=login-verify` | POST | 验证登录数据 | 公开 |
+| `/action/passkey?do=list` | GET | 获取用户凭证列表 | 已登录用户 |
+| `/action/passkey?do=delete` | POST | 删除凭证 | 已登录用户 |
+| `/action/passkey?do=login-logs` | GET | 获取登录历史记录 | 已登录用户 |
 
 ### 2. 请求参数与响应格式
 
@@ -204,7 +205,7 @@ sequenceDiagram
 
 **请求：**
 ```json
-POST /action/passkey/register/options
+POST /action/passkey?do=register-options
 Content-Type: application/json
 
 {
@@ -216,7 +217,7 @@ Content-Type: application/json
 **响应：**
 ```json
 {
-  "ok": true,
+  "success": true,
   "data": {
     "rp": {
       "name": "Typecho",
@@ -244,7 +245,7 @@ Content-Type: application/json
 
 **请求：**
 ```json
-POST /action/passkey/register/verify
+POST /action/passkey?do=register-verify
 Content-Type: application/json
 
 {
@@ -265,7 +266,7 @@ Content-Type: application/json
 **响应：**
 ```json
 {
-  "ok": true,
+  "success": true,
   "data": {
     "userId": 1,
     "credentialId": "...",
@@ -278,7 +279,7 @@ Content-Type: application/json
 
 **请求：**
 ```json
-POST /action/passkey/login/options
+POST /action/passkey?do=login-options
 Content-Type: application/json
 
 {}
@@ -287,7 +288,7 @@ Content-Type: application/json
 **响应：**
 ```json
 {
-  "ok": true,
+  "success": true,
   "data": {
     "challenge": "...",
     "rpId": "example.com",
@@ -305,7 +306,7 @@ Content-Type: application/json
 
 **请求：**
 ```json
-POST /action/passkey/login/verify
+POST /action/passkey?do=login-verify
 Content-Type: application/json
 
 {
@@ -325,7 +326,7 @@ Content-Type: application/json
 **响应：**
 ```json
 {
-  "ok": true,
+  "success": true,
   "data": {
     "userId": 1,
     "userName": "user@example.com",
@@ -357,7 +358,7 @@ Content-Type: application/json
 
 ```javascript
 // 注册 Passkey
-const registerOptions = await fetch('/action/passkey/register/options', {
+const registerOptions = await fetch('/action/passkey?do=register-options', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ username: 'user@example.com', displayName: 'User Name' })
@@ -367,7 +368,7 @@ const credential = await navigator.credentials.create({
   publicKey: registerOptions.data
 });
 
-const registerResult = await fetch('/action/passkey/register/verify', {
+const registerResult = await fetch('/action/passkey?do=register-verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -378,7 +379,7 @@ const registerResult = await fetch('/action/passkey/register/verify', {
 }).then(r => r.json());
 
 // 登录 Passkey
-const loginOptions = await fetch('/action/passkey/login/options', {
+const loginOptions = await fetch('/action/passkey?do=login-options', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({})
@@ -388,7 +389,7 @@ const assertion = await navigator.credentials.get({
   publicKey: loginOptions.data
 });
 
-const loginResult = await fetch('/action/passkey/login/verify', {
+const loginResult = await fetch('/action/passkey?do=login-verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ credential: assertion })
@@ -426,10 +427,10 @@ const loginResult = await fetch('/action/passkey/login/verify', {
 
 | 浏览器 | 版本 | 测试状态 |
 |--------|------|----------|
-| Chrome | 90+ | ✅ 通过 |
-| Firefox | 88+ | ✅ 通过 |
-| Safari | 14+ | ✅ 通过 |
-| Edge | 90+ | ✅ 通过 |
+| Chrome | 67+ | ✅ 通过 |
+| Firefox | 60+ | ✅ 通过 |
+| Safari | 13+ | ✅ 通过 |
+| Edge | 18+ | ✅ 通过 |
 
 ### 2. 性能测试
 
@@ -566,7 +567,7 @@ const loginResult = await fetch('/action/passkey/login/verify', {
 ### v1.0.5 (2026-02-24) - 稳定版本
 
 **核心特性：**
-- ✅ 可配置安全模式（平衡/标准/严格/自定义）
+- ✅ 可配置安全模式（开发/常规/严格/自定义）
 - ✅ RP ID 与 Origin 验证优化（防 Host 头注入）
 - ✅ 增强的速率限制机制
 - ✅ 完善的错误处理和日志记录
@@ -605,7 +606,6 @@ const loginResult = await fetch('/action/passkey/login/verify', {
 ### v1.0.2 (2026-02-21) - 功能完善
 
 **新增功能：**
-- ✅ 多设备支持（每个用户最多 10 个凭证）
 - ✅ 管理员面板凭证管理
 - ✅ 登录历史记录与审计
 - ✅ 浏览器兼容性检测
