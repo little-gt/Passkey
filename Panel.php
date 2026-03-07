@@ -23,13 +23,16 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
+$pluginVersion = '1.0.6'; // 与 Plugin.php 中的版本号保持一致
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>Passkey 身份验证管理 - <?php echo htmlspecialchars($options->title); ?></title>
     <style>
         * {
@@ -92,6 +95,68 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
             display: flex;
             align-items: center;
             gap: 16px;
+        }
+        
+        .passkey-menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            padding: 8px;
+            cursor: pointer;
+            color: #374151;
+        }
+        
+        .passkey-menu-toggle svg {
+            width: 24px;
+            height: 24px;
+        }
+        
+        .passkey-mobile-menu {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #ffffff;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 16px;
+            z-index: 999;
+        }
+        
+        .passkey-mobile-menu.active {
+            display: block;
+        }
+        
+        .passkey-mobile-menu-item {
+            display: block;
+            padding: 12px 16px;
+            color: #374151;
+            text-decoration: none;
+            font-size: 14px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+        
+        .passkey-mobile-menu-item:hover {
+            background: #f3f4f6;
+        }
+        
+        .passkey-mobile-menu-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .passkey-mobile-user {
+            padding: 12px 16px;
+            background: #f9fafb;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        
+        .passkey-mobile-user strong {
+            color: #111827;
         }
         
         .passkey-badge {
@@ -158,6 +223,9 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
             display: inline-flex;
             align-items: center;
             gap: 6px;
+            min-height: 44px;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
         }
         
         .passkey-btn-primary {
@@ -280,11 +348,66 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
             cursor: pointer;
             font-weight: 500;
             transition: all 0.2s;
+            min-height: 44px;
+            min-width: 44px;
+            -webkit-tap-highlight-color: transparent;
         }
         
         .passkey-btn-delete:hover {
             background: #fef2f2;
             border-color: #dc2626;
+        }
+        
+        .passkey-card-item {
+            display: none;
+        }
+        
+        .passkey-card-row {
+            padding: 16px;
+            border-bottom: 1px solid #e5e7eb;
+            background: #ffffff;
+        }
+        
+        .passkey-card-row:last-child {
+            border-bottom: none;
+        }
+        
+        .passkey-card-row:hover {
+            background: #f9fafb;
+        }
+        
+        .passkey-card-field {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding: 8px 0;
+        }
+        
+        .passkey-card-field:not(:last-child) {
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .passkey-card-label {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 500;
+            flex-shrink: 0;
+            min-width: 80px;
+        }
+        
+        .passkey-card-value {
+            font-size: 13px;
+            color: #374151;
+            text-align: right;
+            word-break: break-all;
+        }
+        
+        .passkey-card-actions {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
         }
         
         /* 操作链接 */
@@ -349,6 +472,11 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
             background: #ffffff;
             border: 1px solid #e5e7eb;
             padding: 20px;
+            transition: box-shadow 0.2s;
+        }
+        
+        .passkey-stat-card:active {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         
         .passkey-stat-label {
@@ -384,35 +512,179 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
         
         /* 响应式 */
         @media (max-width: 768px) {
+            body {
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+            
             .passkey-navbar-inner {
                 padding: 12px 16px;
+                position: relative;
             }
             
             .passkey-navbar-title {
-                font-size: 14px;
+                font-size: 15px;
+            }
+            
+            .passkey-navbar-actions {
+                display: none;
+            }
+            
+            .passkey-menu-toggle {
+                display: block;
             }
             
             .passkey-main {
-                padding: 16px;
+                padding: 12px;
+            }
+            
+            .passkey-section {
+                margin-bottom: 12px;
             }
             
             .passkey-section-header {
                 flex-direction: column;
-                align-items: flex-start;
+                align-items: stretch;
                 gap: 12px;
+                padding: 16px;
+            }
+            
+            .passkey-section-title {
+                font-size: 15px;
+            }
+            
+            .passkey-section-body {
+                padding: 12px;
             }
             
             .passkey-table {
-                font-size: 12px;
+                display: none;
             }
             
-            .passkey-table th,
-            .passkey-table td {
-                padding: 10px 12px;
+            .passkey-card-item {
+                display: block;
+            }
+            
+            .passkey-table-empty {
+                display: block;
+                padding: 32px 16px;
+            }
+            
+            .passkey-btn {
+                width: 100%;
+                justify-content: center;
+                padding: 12px 20px;
+                font-size: 14px;
+            }
+            
+            .passkey-btn-delete {
+                width: auto;
+                min-width: 80px;
             }
             
             .passkey-stats {
                 grid-template-columns: 1fr;
+                gap: 12px;
+            }
+            
+            .passkey-stat-card {
+                padding: 16px;
+            }
+            
+            .passkey-stat-label {
+                font-size: 11px;
+            }
+            
+            .passkey-stat-value {
+                font-size: 24px;
+            }
+            
+            .passkey-info-box {
+                padding: 14px;
+                margin-bottom: 12px;
+            }
+            
+            .passkey-info-box-title {
+                font-size: 13px;
+            }
+            
+            .passkey-info-box li {
+                font-size: 12px;
+                padding: 5px 0 5px 14px;
+            }
+            
+            .passkey-footer-inner {
+                padding: 0 16px;
+                padding-bottom: env(safe-area-inset-bottom);
+            }
+            
+            .passkey-notification {
+                left: 12px;
+                right: 12px;
+                min-width: auto;
+                max-width: none;
+                top: calc(12px + env(safe-area-inset-top));
+                padding: 14px 16px;
+                font-size: 13px;
+            }
+            
+            .passkey-link {
+                padding: 8px 0;
+                display: inline-block;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .passkey-navbar-title {
+                font-size: 14px;
+            }
+            
+            .passkey-section-title {
+                font-size: 14px;
+            }
+            
+            .passkey-stat-value {
+                font-size: 20px;
+            }
+            
+            .passkey-card-row {
+                padding: 12px;
+            }
+            
+            .passkey-card-field {
+                flex-direction: column;
+                gap: 4px;
+            }
+            
+            .passkey-card-value {
+                text-align: left;
+                font-size: 12px;
+            }
+            
+            .passkey-card-label {
+                min-width: auto;
+            }
+            
+            .passkey-card-actions {
+                justify-content: center;
+            }
+            
+            .passkey-btn-delete {
+                width: 100%;
+            }
+        }
+        
+        @media (hover: none) and (pointer: coarse) {
+            .passkey-btn:hover,
+            .passkey-btn-delete:hover,
+            .passkey-link:hover,
+            .passkey-action-link:hover {
+                background: inherit;
+                color: inherit;
+                text-decoration: none;
+            }
+            
+            .passkey-btn:active {
+                opacity: 0.8;
             }
         }
         
@@ -522,6 +794,154 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
             width: 14px;
             height: 14px;
         }
+        
+        /* 弹窗遮罩层 */
+        .passkey-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10001;
+            animation: passkeyFadeIn 0.2s ease;
+        }
+        
+        .passkey-modal-overlay.active {
+            display: block;
+        }
+        
+        /* 弹窗 */
+        .passkey-modal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #ffffff;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            z-index: 10002;
+            min-width: 320px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow: hidden;
+            animation: passkeyModalIn 0.3s ease;
+        }
+        
+        .passkey-modal.active {
+            display: block;
+        }
+        
+        /* 弹窗头部 */
+        .passkey-modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 20px;
+        }
+        
+        .passkey-modal-title {
+            font-size: 14px;
+            font-weight: 500;
+            color: #111827;
+            margin: 0;
+        }
+        
+        .passkey-modal-close {
+            background: none;
+            border: none;
+            padding: 6px;
+            cursor: pointer;
+            color: #9ca3af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+            min-width: 28px;
+            min-height: 28px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .passkey-modal-close:hover {
+            color: #374151;
+        }
+        
+        /* 弹窗内容 */
+        .passkey-modal-body {
+            padding: 0 20px 20px 20px;
+            color: #4b5563;
+            font-size: 14px;
+            line-height: 1.5;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .passkey-modal-body p {
+            margin: 0;
+        }
+        
+        /* 弹窗底部 */
+        .passkey-modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 0 20px 16px 20px;
+        }
+        
+        /* 弹窗动画 */
+        @keyframes passkeyFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+        
+        @keyframes passkeyModalIn {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.98);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+        
+        /* 移动端弹窗优化 */
+        @media (max-width: 768px) {
+            .passkey-modal {
+                min-width: 90%;
+                max-width: 90%;
+            }
+            
+            .passkey-modal-header {
+                padding: 14px 16px;
+            }
+            
+            .passkey-modal-body {
+                padding: 16px;
+                font-size: 13px;
+            }
+            
+            .passkey-modal-footer {
+                padding: 10px 16px;
+                flex-direction: column-reverse;
+            }
+            
+            .passkey-modal-footer .passkey-btn {
+                width: 100%;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .passkey-modal {
+                min-width: 95%;
+                max-width: 95%;
+            }
+        }
     </style>
 </head>
 <body>
@@ -536,6 +956,19 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                     <span class="passkey-badge">用户: <?php echo htmlspecialchars($user->screenName); ?></span>
                     <a href="<?php echo $options->adminUrl; ?>" class="passkey-link">返回控制台</a>
                 </div>
+                <button type="button" class="passkey-menu-toggle" id="passkey-menu-toggle" aria-label="菜单">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
+            <div class="passkey-mobile-menu" id="passkey-mobile-menu">
+                <div class="passkey-mobile-user">
+                    当前用户: <strong><?php echo htmlspecialchars($user->screenName); ?></strong>
+                </div>
+                <a href="<?php echo $options->adminUrl; ?>" class="passkey-mobile-menu-item">返回控制台</a>
             </div>
         </nav>
         
@@ -591,6 +1024,9 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                             </tr>
                         </tbody>
                     </table>
+                    <div class="passkey-card-item" id="passkey-list-mobile">
+                        <div class="passkey-table-empty">加载中...</div>
+                    </div>
                 </div>
             </div>
             
@@ -617,6 +1053,9 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                             </tr>
                         </tbody>
                     </table>
+                    <div class="passkey-card-item" id="passkey-login-logs-mobile">
+                        <div class="passkey-table-empty">加载中...</div>
+                    </div>
                 </div>
             </div>
             
@@ -657,6 +1096,25 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
         </footer>
     </div>
     
+    <div class="passkey-modal-overlay" id="passkey-modal-overlay"></div>
+    <div class="passkey-modal" id="passkey-modal">
+        <div class="passkey-modal-header">
+            <h3 class="passkey-modal-title" id="passkey-modal-title">确认</h3>
+            <button type="button" class="passkey-modal-close" id="passkey-modal-close" aria-label="关闭">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+        <div class="passkey-modal-body" id="passkey-modal-body">
+        </div>
+        <div class="passkey-modal-footer">
+            <button type="button" class="passkey-btn passkey-btn-danger" id="passkey-modal-cancel">取消</button>
+            <button type="button" class="passkey-btn passkey-btn-primary" id="passkey-modal-confirm">确定</button>
+        </div>
+    </div>
+    
     <script>
         var PASSKEY_ACTION_URL = "<?php echo $options->index; ?>/action/passkey";
     </script>
@@ -664,9 +1122,24 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
     <script>
     (function() {
         var listTable = document.getElementById('passkey-list');
+        var listTableMobile = document.getElementById('passkey-list-mobile');
         var registerBtn = document.getElementById('register-passkey-btn');
         var countDiv = document.getElementById('passkey-count');
         var lastDiv = document.getElementById('passkey-last');
+        var menuToggle = document.getElementById('passkey-menu-toggle');
+        var mobileMenu = document.getElementById('passkey-mobile-menu');
+        
+        if (menuToggle && mobileMenu) {
+            menuToggle.addEventListener('click', function() {
+                mobileMenu.classList.toggle('active');
+            });
+            
+            document.addEventListener('click', function(e) {
+                if (!menuToggle.contains(e.target) && !mobileMenu.contains(e.target)) {
+                    mobileMenu.classList.remove('active');
+                }
+            });
+        }
         
         /**
          * 安全的 JSON 解析辅助函数
@@ -692,6 +1165,64 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                     throw new Error('服务器响应格式错误: ' + e.message);
                 }
             });
+        }
+        
+        var modalOverlay = document.getElementById('passkey-modal-overlay');
+        var modal = document.getElementById('passkey-modal');
+        var modalTitle = document.getElementById('passkey-modal-title');
+        var modalBody = document.getElementById('passkey-modal-body');
+        var modalClose = document.getElementById('passkey-modal-close');
+        var modalCancel = document.getElementById('passkey-modal-cancel');
+        var modalConfirm = document.getElementById('passkey-modal-confirm');
+        var currentResolve = null;
+        
+        function showModal(title, message, confirmText, cancelText) {
+            return new Promise(function(resolve) {
+                currentResolve = resolve;
+                modalTitle.textContent = title || '确认';
+                modalBody.innerHTML = '<p>' + message.replace(/\n\n/g, '</p><p style="margin-top:12px;">') + '</p>';
+                modalConfirm.textContent = confirmText || '确定';
+                modalCancel.textContent = cancelText || '取消';
+                modalOverlay.classList.add('active');
+                modal.classList.add('active');
+            });
+        }
+        
+        function hideModal(result) {
+            modalOverlay.classList.remove('active');
+            modal.classList.remove('active');
+            if (currentResolve) {
+                currentResolve(result);
+                currentResolve = null;
+            }
+        }
+        
+        modalClose.addEventListener('click', function() {
+            hideModal(false);
+        });
+        
+        modalCancel.addEventListener('click', function() {
+            hideModal(false);
+        });
+        
+        modalConfirm.addEventListener('click', function() {
+            hideModal(true);
+        });
+        
+        modalOverlay.addEventListener('click', function(e) {
+            if (e.target === modalOverlay) {
+                hideModal(false);
+            }
+        });
+        
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && modalOverlay.classList.contains('active')) {
+                hideModal(false);
+            }
+        });
+        
+        function confirmDialog(message) {
+            return showModal('确认', message, '确定', '取消');
         }
         
         // 加载凭证列表
@@ -725,6 +1256,9 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
         // 渲染空状态
         function renderEmpty(message) {
             listTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">' + message + '</td></tr>';
+            if (listTableMobile) {
+                listTableMobile.innerHTML = '<div class="passkey-table-empty">' + message + '</div>';
+            }
             countDiv.textContent = '0';
             lastDiv.textContent = '无';
         }
@@ -738,21 +1272,27 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                     '<path d="M2 16h.01"/><path d="M21.8 16c.2-2 .131-5.354 0-6"/>' +
                     '<path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2"/><path d="M8.65 22c.21-.66.45-1.32.57-2"/>' +
                     '<path d="M9 6.8a6 6 0 0 1 9 5.2v2"/></svg>';
-                listTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty" style="padding:40px 20px;">' +
+                var emptyHtml = '<tr><td colspan="4" class="passkey-table-empty" style="padding:40px 20px;">' +
                     emptyIcon + '<div style="color:#6b7280;">暂无凭证，点击右上角按钮添加</div></td></tr>';
+                listTable.innerHTML = emptyHtml;
+                if (listTableMobile) {
+                    listTableMobile.innerHTML = '<div class="passkey-table-empty" style="padding:40px 20px;">' +
+                        emptyIcon + '<div style="color:#6b7280;">暂无凭证，点击上方按钮添加</div></div>';
+                }
                 countDiv.textContent = '0';
                 lastDiv.textContent = '无';
                 return;
             }
             
-            // 更新统计
             countDiv.textContent = credentials.length;
             lastDiv.textContent = credentials[credentials.length - 1].created_at;
             
-            var html = '';
             var trashIcon = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
                 '<polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>' +
                 '<line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+            
+            var html = '';
+            var mobileHtml = '';
             
             credentials.forEach(function(cred) {
                 html += '<tr>';
@@ -763,28 +1303,39 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                 html += '<button class="passkey-btn-delete" data-id="' + cred.id + '" style="display:inline-flex;align-items:center;gap:6px;">' + trashIcon + '<span>删除</span></button>';
                 html += '</td>';
                 html += '</tr>';
+                
+                mobileHtml += '<div class="passkey-card-row">';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">ID</span><span class="passkey-card-value">' + cred.id + '</span></div>';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">凭证标识符</span><span class="passkey-card-value"><code style="font-size:11px;word-break:break-all;">' + cred.credential_id.substr(0, 32) + '...</code></span></div>';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">创建时间</span><span class="passkey-card-value">' + cred.created_at + '</span></div>';
+                mobileHtml += '<div class="passkey-card-actions">';
+                mobileHtml += '<button class="passkey-btn-delete passkey-btn-danger" data-id="' + cred.id + '" style="display:inline-flex;align-items:center;gap:6px;">' + trashIcon + '<span>删除</span></button>';
+                mobileHtml += '</div>';
+                mobileHtml += '</div>';
             });
-            listTable.innerHTML = html;
             
-            // 绑定删除按钮事件
+            listTable.innerHTML = html;
+            if (listTableMobile) {
+                listTableMobile.innerHTML = mobileHtml;
+            }
+            
             var deleteBtns = document.querySelectorAll('.passkey-btn-delete');
             deleteBtns.forEach(function(btn) {
                 btn.addEventListener('click', function() {
                     var id = this.getAttribute('data-id');
-                    if (confirm('确定要删除此凭证吗？')) {
-                        deleteCredential(id);
-                    }
+                    confirmDialog('确定要删除此凭证吗？').then(function(result) {
+                        if (result) {
+                            deleteCredential(id);
+                        }
+                    });
                 });
             });
         }
         
         // 删除凭证
-        function deleteCredential(id) {
-            // 显示确认对话框
-            var confirmIcon = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" style="display:block;margin:0 auto 15px;">' +
-                '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
-            
-            if (!confirm('确定要删除此凭证吗？\n\n删除后该设备将无法使用 Passkey 登录。')) {
+        async function deleteCredential(id) {
+            var result = await confirmDialog('确定要删除此凭证吗？\n\n删除后该设备将无法使用 Passkey 登录。');
+            if (!result) {
                 return;
             }
             
@@ -860,38 +1411,61 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
         // 加载登录记录
         function loadLoginLogs() {
             var logsTable = document.getElementById('passkey-login-logs');
+            var logsTableMobile = document.getElementById('passkey-login-logs-mobile');
             
-            // 显示加载中
-            logsTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">' +
+            var loadingHtml = '<tr><td colspan="4" class="passkey-table-empty">' +
                 '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;animation:passkeyRotate 1s linear infinite;margin-right:8px;vertical-align:middle;">' +
                 '<line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>' +
                 '<line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>' +
                 '<line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>' +
                 '<line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>' +
                 '</svg>加载中...</td></tr>';
+            logsTable.innerHTML = loadingHtml;
+            if (logsTableMobile) {
+                logsTableMobile.innerHTML = '<div class="passkey-table-empty">' +
+                    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:inline-block;animation:passkeyRotate 1s linear infinite;margin-right:8px;vertical-align:middle;">' +
+                    '<line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>' +
+                    '<line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>' +
+                    '<line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>' +
+                    '<line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>' +
+                    '</svg>加载中...</div>';
+            }
             
             fetch(PASSKEY_ACTION_URL + '?do=login-logs&limit=20')
                 .then(parseJSON)
                 .then(function(data) {
                     if (data.success) {
-                        renderLoginLogs(data.data, logsTable);
+                        renderLoginLogs(data.data, logsTable, logsTableMobile);
                     } else {
-                        logsTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">加载失败: ' + data.error + '</td></tr>';
+                        var errorHtml = '<tr><td colspan="4" class="passkey-table-empty">加载失败: ' + data.error + '</td></tr>';
+                        logsTable.innerHTML = errorHtml;
+                        if (logsTableMobile) {
+                            logsTableMobile.innerHTML = '<div class="passkey-table-empty">加载失败: ' + data.error + '</div>';
+                        }
                     }
                 })
                 .catch(function(error) {
                     console.error('加载登录记录失败:', error);
-                    logsTable.innerHTML = '<tr><td colspan="4" class="passkey-table-empty">加载失败: ' + error.message + '</td></tr>';
+                    var errorHtml = '<tr><td colspan="4" class="passkey-table-empty">加载失败: ' + error.message + '</td></tr>';
+                    logsTable.innerHTML = errorHtml;
+                    if (logsTableMobile) {
+                        logsTableMobile.innerHTML = '<div class="passkey-table-empty">加载失败: ' + error.message + '</div>';
+                    }
                 });
         }
         
         // 渲染登录记录
-        function renderLoginLogs(logs, table) {
+        function renderLoginLogs(logs, table, tableMobile) {
             if (!logs || logs.length === 0) {
                 var historyIcon = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5" style="display:block;margin:20px auto 10px;">' +
                     '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-                table.innerHTML = '<tr><td colspan="4" class="passkey-table-empty" style="padding:40px 20px;">' +
+                var emptyHtml = '<tr><td colspan="4" class="passkey-table-empty" style="padding:40px 20px;">' +
                     historyIcon + '<div style="color:#6b7280;">暂无登录记录</div></td></tr>';
+                table.innerHTML = emptyHtml;
+                if (tableMobile) {
+                    tableMobile.innerHTML = '<div class="passkey-table-empty" style="padding:40px 20px;">' +
+                        historyIcon + '<div style="color:#6b7280;">暂无登录记录</div></div>';
+                }
                 return;
             }
             
@@ -901,6 +1475,8 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                 '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
             
             var html = '';
+            var mobileHtml = '';
+            
             logs.forEach(function(log) {
                 var isSuccess = log.status.toLowerCase().indexOf('success') > -1 || log.status.toLowerCase().indexOf('成功') > -1;
                 var statusClass = isSuccess ? 'success' : 'failed';
@@ -912,8 +1488,19 @@ $pluginVersion = '1.0.5'; // 与 Plugin.php 中的版本号保持一致
                 html += '<td><code style="font-size:12px;">' + log.ip_address + '</code></td>';
                 html += '<td><span class="passkey-status-badge ' + statusClass + '">' + statusIcon + ' ' + log.status + '</span></td>';
                 html += '</tr>';
+                
+                mobileHtml += '<div class="passkey-card-row">';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">登录时间</span><span class="passkey-card-value">' + log.login_time + '</span></div>';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">设备/浏览器</span><span class="passkey-card-value" style="font-size:12px;word-break:break-word;">' + (log.user_agent || 'Unknown') + '</span></div>';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">IP 地址</span><span class="passkey-card-value"><code style="font-size:11px;">' + log.ip_address + '</code></span></div>';
+                mobileHtml += '<div class="passkey-card-field"><span class="passkey-card-label">状态</span><span class="passkey-card-value"><span class="passkey-status-badge ' + statusClass + '">' + statusIcon + ' ' + log.status + '</span></span></div>';
+                mobileHtml += '</div>';
             });
+            
             table.innerHTML = html;
+            if (tableMobile) {
+                tableMobile.innerHTML = mobileHtml;
+            }
         }
         
         // 页面加载时获取凭证列表和登录记录

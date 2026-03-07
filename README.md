@@ -2,32 +2,38 @@
 
 一个为 Typecho 博客系统提供企业级 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。
 
-**v1.0.5 稳定版本：** 
-- 支持安全模式选择与参数配置（平衡/标准/严格三种预设，可自定义调优）
-- 优化 RP ID 和 Origin 验证逻辑，避免不安全的动态构造，增强域名验证安全性
-- 全面信息脱敏、错误处理统一、增强输入验证，修复 12 处信息泄露问题
-
-![Passkey](https://img.shields.io/badge/Passkey-v1.0.5-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+![Passkey](https://img.shields.io/badge/Passkey-v1.0.6-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-777BB4?style=for-the-badge&logo=php&logoColor=white)
 
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 ![WebAuthn](https://img.shields.io/badge/WebAuthn-FIDO2-4c1?style=for-the-badge)
 
+![Passkey 管理页面](screenshots/screenshot3.png)
+Passkey管理页面，轻松管理已绑定的凭证，查看登录历史记录。
+
+---
+
 ## 📸 截图预览
 
-### 后台插件设置
-![插件设置页面](screenshots/screenshot1.png)
-![插件设置页面](screenshots/screenshot4.png)
+### 🖥︎ PC 端
+
+#### 后台插件设置
+![插件设置页面1](screenshots/screenshot1.png)
+![插件设置页面2](screenshots/screenshot2.png)
 *配置注入模式、RP 信息和注册选项*
 
-### Passkey 管理界面
-![Passkey 管理页面](screenshots/screenshot2.png)
-*管理已绑定的凭证，查看登录历史记录*
-
-### Passkey 登录界面
-![Passkey 登录页面](screenshots/screenshot3.png)
+#### Passkey 登录界面
+![Passkey 登录页面](screenshots/screenshot4.png)
 *后台登录页面启用 Passkey 登录*
+
+### 📱 移动端
+
+![Passkey 插件面板1](screenshots/mobile/screenshot1.png)
+![Passkey 插件面板2](screenshots/mobile/screenshot2.png)
+*移动端管理页面深度优化，轻松管理 Passkey 设置*
+
+---
 
 ## 🔗 参考资源
 
@@ -40,38 +46,51 @@
 - [Typecho Passkey 插件技术实现](https://blog.csdn.net/qq_43011259/article/details/158292076)
 - [WebAuthn 安全最佳实践](https://webauthn.guide/)
 
+---
+
 ## ✨ 功能特性
 
 ### 🔐 核心功能
-- **Passkey 登录** - 使用生物识别（指纹、面容）或设备 PIN 快速登录  
-- **后台管理** - 在 Typecho 后台管理和绑定 Passkey  
-- **登录记录** - 仪表盘查询近期 Passkey 登录历史，掌握账户安全状况  
-- **自动注入** - 自动在登录页面添加 Passkey 登录选项  
-- **手动模式** - 支持手动控制登录按钮的显示位置  
-- **多设备支持** - 可以绑定多个设备的 Passkey  
-- **注册支持** - 允许新用户通过 Passkey 创建账户  
+| 功能项 | 描述 |
+|--------|------|
+| Passkey 登录 | 使用生物识别（指纹、面容）或设备 PIN 快速登录 |
+| 后台管理 | 在 Typecho 后台管理和绑定 Passkey |
+| 登录记录 | 仪表盘查询近期 Passkey 登录历史，掌握账户安全状况 |
+| 自动注入 | 自动在登录页面添加 Passkey 登录选项 |
+| 手动模式 | 支持手动控制登录按钮的显示位置 |
+| 多设备支持 | 可以绑定多个设备的 Passkey |
+| 注册支持 | 允许新用户通过 Passkey 创建账户 |
 
 ### 🛡️ 企业级安全
-- **完整签名验证** - 服务器端实现 ES256/RS256 算法验证（PHP OpenSSL）  
-- **IEEE P1363 ↔ DER** - 自动转换 WebAuthn 签名格式兼容 OpenSSL  
-- **速率限制** - 基于 Session 的注册/登录频率限制，防暴力破解  
-- **Challenge 验证** - 可配置超时时间（60-600秒），防重放攻击  
-- **签名计数器** - 检测克隆的认证器（Clone Detection）  
-- **Origin 验证** - 严格/宽松模式，防域名欺骗  
-- **数据长度限制** - 防止恶意超大数据 DoS 攻击  
-- **安全日志记录** - 完整记录验证失败事件，便于审计  
+| 功能项 | 描述 |
+|--------|------|
+| 完整签名验证 | 服务器端实现 ES256/RS256 算法验证（PHP OpenSSL） |
+| IEEE P1363 ↔ DER | 自动转换 WebAuthn 签名格式兼容 OpenSSL |
+| 速率限制 | 基于 Session 的注册/登录频率限制，防暴力破解 |
+| Challenge 验证 | 可配置超时时间（60-600秒），防重放攻击 |
+| 签名计数器 | 检测克隆的认证器（Clone Detection） |
+| Origin 验证 | 严格/宽松模式，防域名欺骗 |
+| 数据长度限制 | 防止恶意超大数据 DoS 攻击 |
+| 安全日志记录 | 完整记录验证失败事件，便于审计 |
 
 ### 🎨 用户体验
-- **优雅通知** - 网页内通知系统，无需弹窗  
-- **响应式设计** - 适配 Passport 设计系统（无荧光、无圆角、无阴影）  
-- **版本控制** - 资源文件带版本号，避免缓存  
-- **完整卸载** - 移除插件时可选删除所有数据  
+| 功能项 | 描述 |
+|--------|------|
+| 用户体验 | 优雅通知 | 网页内通知系统，无需弹窗 |
+| 响应式设计 | 适配 Passport 设计系统（无荧光、无圆角、无阴影），完全支持移动端 |
+| 触摸友好 | 按钮和交互元素适合触摸操作，支持移动设备 |
+| 版本控制 | 资源文件带版本号，避免缓存 |
+| 完整卸载 | 移除插件时可选删除所有数据 |
 
 ### 🌐 浏览器兼容
-- **智能检测** - 自动识别浏览器类型和版本  
-- **Safari 适配** - Safari < 14 自动跳过不支持的选项  
-- **Firefox 增强** - 版本检查和友好错误提示  
-- **条件特性** - 动态调整 WebAuthn 选项
+| 功能项 | 描述 |
+|--------|------|
+| 智能检测 | 自动识别浏览器类型和版本，支持 8+ 种设备检测方法 |
+| Safari 适配 | Safari < 14 自动跳过不支持的选项，iOS 14.5+ 优化 |
+| Firefox 增强 | 版本检查和友好错误提示，Firefox Android 92+ 支持 |
+| 条件特性 | 动态调整 WebAuthn 选项，针对不同设备优化参数 |
+
+---
 
 ## 🏗️ 系统架构
 
@@ -170,6 +189,8 @@ sequenceDiagram
     B-->>U: 跳转到后台
 ```
 
+---
+
 ## 📋 系统要求
 
 ### 服务器要求
@@ -193,9 +214,12 @@ php -m | grep -E 'openssl|mbstring|json|session'
 ### 平台支持
 - ✅ Windows 10 1903+ (Windows Hello)
 - ✅ macOS (Touch ID / Face ID)
-- ✅ iOS 14+ (Face ID / Touch ID)
+- ✅ iOS 14.5+ (Face ID / Touch ID)
+- ✅ iPadOS 13+ (Face ID / Touch ID)
 - ✅ Android 7+ (指纹 / 面部识别)
 - ✅ Linux (外部安全密钥)
+
+---
 
 ## 📦 安装步骤
 
@@ -245,13 +269,15 @@ git clone https://github.com/little-gt/PLUGION-Passkey/Passkey.git
 chmod -R 755 Passkey
 ```
 
+---
+
 ## ⚙️ 插件配置
 
 进入「控制台」→「插件」→「Passkey」→「设置」
 
 ### 1. 注入模式
 
-#### 自动注入（推荐）✅
+#### 自动注入
 插件会自动在 Typecho 登录页面注入 Passkey 登录按钮，无需修改任何代码。
 
 **实现方式：**
@@ -259,7 +285,7 @@ chmod -R 755 Passkey
 - JavaScript 检测登录表单并自动插入 Passkey 登录按钮
 - 支持多种主题结构，智能适配不同的表单布局
 
-#### 手动添加 📝
+#### 手动添加
 需要在主题登录页面中手动添加 Passkey 登录代码。
 
 **步骤：**
@@ -269,9 +295,9 @@ chmod -R 755 Passkey
 
 ```php
 <!-- Passkey 登录 -->
-<link rel="stylesheet" href="<?php echo $this->options->pluginUrl; ?>/Passkey/assist/css/style.css?v=1.0.5">
+<link rel="stylesheet" href="<?php echo $this->options->pluginUrl; ?>/Passkey/assist/css/style.css?v=1.0.6">
 <script>var PASSKEY_ACTION_URL = "<?php echo $this->options->index; ?>/action/passkey";</script>
-<script src="<?php echo $this->options->pluginUrl; ?>/Passkey/assist/js/passkey.js?v=1.0.5"></script>
+<script src="<?php echo $this->options->pluginUrl; ?>/Passkey/assist/js/passkey.js?v=1.0.6"></script>
 <div id="passkey-login-container" style="margin-top: 20px;">
     <div style="text-align: center; margin-bottom: 10px;">
         <span style="color: #999;">或</span>
@@ -346,6 +372,8 @@ document.addEventListener('DOMContentLoaded', function() {
 | **验证策略** |  |  |
 | originValidationMode | strict/standard/relaxed | Origin 验证模式 |
 
+---
+
 ## 📖 使用说明
 
 ### 后台管理 Passkey
@@ -397,6 +425,8 @@ document.addEventListener('DOMContentLoaded', function() {
 3. **创建凭证**
    - 提交信息后进行生物识别
    - 系统自动创建账户并登录
+
+---
 
 ## 🔧 技术实现
 
@@ -511,6 +541,8 @@ CREATE TABLE typecho_passkey_login_logs (
 - `user_agent` - 浏览器用户代理字符串
 - `login_time` - 登录时间戳
 - `status` - 登录状态（success/failed）
+
+---
 
 ## 📡 API 文档
 
@@ -731,6 +763,8 @@ CREATE TABLE typecho_passkey_login_logs (
 | `ERR_NETWORK` | 网络错误 |
 | `ERR_UNKNOWN` | 未知错误 |
 
+---
+
 ## 🛡️ 安全性说明
 
 ### FIDO2/WebAuthn 标准
@@ -742,7 +776,7 @@ CREATE TABLE typecho_passkey_login_logs (
 
 ### 插件安全措施
 
-#### 核心安全机制（v1.0.5 增强）
+#### 核心安全机制
 - **完整签名验证** - 服务器端实现 ES256/RS256 算法验证（PHP OpenSSL）
 - **格式自动转换** - IEEE P1363 ↔ DER，兼容 OpenSSL
 - **签名计数器** - 检测认证器克隆攻击（Counter 回滚检测）
@@ -758,7 +792,7 @@ CREATE TABLE typecho_passkey_login_logs (
 - **会话保护** - Session 固定攻击防护，登录后重新生成 ID
 - **事务保护** - 数据库事务确保原子性，防竞态条件
 
-#### 三种安全配置模式（v1.0.5 新增）
+#### 三种安全配置模式
 
 **🟢 开发模式（推荐：开发/测试环境）**
 ```
@@ -843,27 +877,28 @@ PasskeyManager.showNotification('提示信息', 'info');
 - 响应式设计，移动端友好
 ```
 
+---
+
 ## 📜 版本说明
 
-### 当前版本：v1.0.5（稳定版）
+### 当前版本：v1.0.6
 
-**主要特性：**
-- ✅ 三种预设安全模式（开发/常规/严格）
-- ✅ 10+ 项可配置安全参数
-- ✅ RP ID 安全构造（防 Host 头注入）
-- ✅ Origin 验证增强（三种模式）
-- ✅ 全面信息脱敏（12 处敏感信息泄露修复）
-- ✅ 统一错误处理机制
-- ✅ 增强输入验证
-- ✅ 优化错误日志记录
-
-**维护状态：**
-- 当前稳定版已进入维护阶段
-- 不再进行频繁功能更新
-- 仅接受安全补丁和 bug 修复
-- 建议生产环境使用此版本
+**核心特性：** 移动端兼容性优化
 
 ### 版本更新历史
+
+#### v1.0.6 (2026-03-07) - 移动端兼容性全面优化
+
+**核心更新：**
+- ✅ **移动端响应式设计** - 完全适配移动设备屏幕，支持触摸操作
+- ✅ **iOS Safari 兼容性** - 针对 iOS 14.5+ 优化，支持 Face ID / Touch ID
+- ✅ **Android Chrome 兼容性** - 针对 Android 7+ 设备优化，支持指纹识别
+- ✅ **Firefox 移动端支持** - 增强 Firefox Android 92+ 兼容性
+- ✅ **智能浏览器检测** - 新增 8+ 种设备检测方法，精准识别平台
+- ✅ **设备特定提示** - 根据设备类型显示个性化操作提示
+- ✅ **触摸友好界面** - 按钮和交互元素适合触摸操作
+- ✅ **渐进式降级** - 不支持的设备提供友好的错误提示
+- ✅ **PWA 模式支持** - 检测独立模式，优化离线体验
 
 #### v1.0.5 (2026-02-24) - 安全配置增强
 
@@ -918,12 +953,6 @@ PasskeyManager.showNotification('提示信息', 'info');
 - ✅ 后台管理界面
 - ✅ 自动/手动注入模式
 - ✅ 多设备支持
-
-### 未来版本规划
-
-- **v2.0.0** - 计划支持跨设备 Passkey 同步
-- **v2.1.0** - 计划添加硬件安全密钥支持增强
-- **v2.2.0** - 计划集成更多生物识别方式
 
 ## ❓ 常见问题
 
@@ -1006,6 +1035,8 @@ PasskeyManager.showNotification('提示信息', 'info');
 - ❌ **保留数据**：仅停用插件，数据保留（方便重新启用）
 - 建议：测试环境选择删除，生产环境谨慎选择
 
+---
+
 ## 🐛 故障排查
 
 ### 启用调试模式
@@ -1057,6 +1088,8 @@ SELECT * FROM typecho_passkey_login_logs ORDER BY login_time DESC LIMIT 10;
 DESC typecho_passkey_credentials;
 DESC typecho_passkey_login_logs;
 ```
+
+---
 
 ## 📄 许可证
 
