@@ -23,7 +23,7 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.0.6'; // 与 Plugin.php 中的版本号保持一致
+$pluginVersion = '1.0.7'; // 与 Plugin.php 中的版本号保持一致
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -617,12 +617,14 @@ $pluginVersion = '1.0.6'; // 与 Plugin.php 中的版本号保持一致
                 padding-bottom: env(safe-area-inset-bottom);
             }
             
+            #passkey-notification-container {
+                left: 12px !important;
+                right: 12px !important;
+                top: calc(12px + env(safe-area-inset-top)) !important;
+                max-width: none !important;
+            }
+
             .passkey-notification {
-                left: 12px;
-                right: 12px;
-                min-width: auto;
-                max-width: none;
-                top: calc(12px + env(safe-area-inset-top));
                 padding: 14px 16px;
                 font-size: 13px;
             }
@@ -716,20 +718,30 @@ $pluginVersion = '1.0.6'; // 与 Plugin.php 中的版本号保持一致
         }
         
         /* 增强的通知样式 */
+        #passkey-notification-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
         .passkey-notification {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            min-width: 300px;
-            max-width: 500px;
+            position: relative !important;
+            top: auto !important;
+            right: auto !important;
+            left: auto !important;
+            min-width: 0;
+            max-width: none;
+            width: 100%;
             padding: 16px 20px;
             background: white;
             box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
             display: flex;
             align-items: center;
             gap: 12px;
-            z-index: 10000;
             animation: passkeySlideIn 0.3s ease;
+            margin: 0 !important;
+            pointer-events: auto;
         }
         
         .passkey-notification.success {

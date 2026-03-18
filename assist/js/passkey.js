@@ -19,7 +19,7 @@ var PasskeyManager = (function() {
     };
     
     /**
-     * 浏览器和平台检测（增强版）
+     * 浏览器和平台检测
      */
     var BrowserDetector = {
         userAgent: navigator.userAgent.toLowerCase(),
@@ -190,86 +190,118 @@ var PasskeyManager = (function() {
     };
     
     /**
-     * 检查浏览器是否支持 WebAuthn（增强版）
+     * 检查浏览器是否支持 WebAuthn
      */
-    function isSupported() {
-        var info = BrowserDetector.getDetailedInfo();
-        
-        // 基础 API 检查
-        if (typeof window.PublicKeyCredential === 'undefined') {
-            console.warn('Passkey: PublicKeyCredential API not available');
-            return false;
-        }
-        
-        if (typeof navigator.credentials === 'undefined') {
-            console.warn('Passkey: navigator.credentials not available');
-            return false;
-        }
-        
-        if (typeof navigator.credentials.create !== 'function' ||
-            typeof navigator.credentials.get !== 'function') {
-            console.warn('Passkey: credentials.create/get not available');
-            return false;
-        }
-        
-        // 检查是否在 HTTPS 环境下（WebAuthn 要求）
-        if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-            console.warn('Passkey: WebAuthn requires HTTPS (except localhost)');
-            return false;
-        }
-        
-        // Firefox 特殊检查
-        if (BrowserDetector.isFirefox()) {
-            var firefoxVersion = BrowserDetector.getBrowserVersion();
-            if (firefoxVersion > 0 && firefoxVersion < 60) {
-                console.warn('Passkey: Firefox version too old, require 60+, got ' + firefoxVersion);
-                return false;
+    function evaluateSupportStatus() {
+        var profile = getCompatibilityProfile();
+        var browserVersion = BrowserDetector.getBrowserVersion();
+
+        var checks = [
+            {
+                valid: typeof window.PublicKeyCredential !== 'undefined',
+                reason: '您的浏览器不支持 WebAuthn API',
+                warning: 'Passkey: PublicKeyCredential API not available'
+            },
+            {
+                valid: typeof navigator.credentials !== 'undefined',
+                reason: '您的浏览器不支持凭证管理 API',
+                warning: 'Passkey: navigator.credentials not available'
+            },
+            {
+                valid: typeof navigator.credentials !== 'undefined' &&
+                    typeof navigator.credentials.create === 'function' &&
+                    typeof navigator.credentials.get === 'function',
+                reason: '您的浏览器不支持完整的凭证创建/获取能力',
+                warning: 'Passkey: credentials.create/get not available'
+            },
+            {
+                valid: location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1',
+                reason: 'WebAuthn 需要使用 HTTPS 协议',
+                warning: 'Passkey: WebAuthn requires HTTPS (except localhost)'
             }
-            // Firefox Android 特殊处理
-            if (BrowserDetector.isAndroid() && firefoxVersion < 92) {
-                console.warn('Passkey: Firefox Android requires 92+ for full WebAuthn support');
-                return false;
-            }
-        }
-        
-        // Safari 特殊检查
-        if (BrowserDetector.isSafari()) {
-            var safariVersion = BrowserDetector.getBrowserVersion();
-            
-            if (BrowserDetector.isIOS()) {
-                // iOS Safari 14.5+ 支持完整的 WebAuthn
-                if (safariVersion > 0 && safariVersion < 14) {
-                    console.warn('Passkey: iOS Safari version too old, require 14+, got ' + safariVersion);
-                    return false;
-                }
-                // iPadOS 13+ 需要特殊检测
-                if (BrowserDetector.isIPad() && safariVersion < 13) {
-                    console.warn('Passkey: iPadOS version too old, require 13+, got ' + safariVersion);
-                    return false;
-                }
-            } else if (BrowserDetector.isMac()) {
-                // macOS Safari 13+ 支持
-                if (safariVersion > 0 && safariVersion < 13) {
-                    console.warn('Passkey: macOS Safari version too old, require 13+, got ' + safariVersion);
-                    return false;
-                }
+        ];
+
+        if (profile.isFirefox) {
+            checks.push({
+                valid: !(browserVersion > 0 && browserVersion < 60),
+                reason: 'Firefox 版本过低，需要 60 或更高版本（当前: ' + browserVersion + '）',
+                warning: 'Passkey: Firefox version too old, require 60+, got ' + browserVersion
+            });
+
+            if (profile.isAndroid) {
+                checks.push({
+                    valid: !(browserVersion > 0 && browserVersion < 92),
+                    reason: 'Android Firefox 版本过低，需要 92 或更高版本（当前: ' + browserVersion + '）',
+                    warning: 'Passkey: Firefox Android requires 92+ for full WebAuthn support'
+                });
             }
         }
-        
-        // Chrome/Edge 特殊检查
+
+        if (profile.isSafariIOS) {
+            checks.push({
+                valid: !(browserVersion > 0 && browserVersion < 14),
+                reason: 'iOS Safari 版本过低，需要 14 或更高版本（当前: ' + browserVersion + '）',
+                warning: 'Passkey: iOS Safari version too old, require 14+, got ' + browserVersion
+            });
+
+            if (BrowserDetector.isIPad()) {
+                checks.push({
+                    valid: !(browserVersion > 0 && browserVersion < 13),
+                    reason: 'iPadOS 版本过低，需要 13 或更高版本（当前: ' + browserVersion + '）',
+                    warning: 'Passkey: iPadOS version too old, require 13+, got ' + browserVersion
+                });
+            }
+        }
+
+        if (profile.isSafariMac) {
+            checks.push({
+                valid: !(browserVersion > 0 && browserVersion < 13),
+                reason: 'macOS Safari 版本过低，需要 13 或更高版本（当前: ' + browserVersion + '）',
+                warning: 'Passkey: macOS Safari version too old, require 13+, got ' + browserVersion
+            });
+        }
+
         if (BrowserDetector.isChrome() || BrowserDetector.isEdge()) {
-            var chromeVersion = BrowserDetector.getBrowserVersion();
-            if (chromeVersion > 0 && chromeVersion < 67) {
-                console.warn('Passkey: Chrome/Edge version too old, require 67+, got ' + chromeVersion);
-                return false;
-            }
-            // Android Chrome 特殊处理
-            if (BrowserDetector.isAndroid() && chromeVersion < 70) {
-                console.warn('Passkey: Android Chrome requires 70+ for full WebAuthn support');
-                return false;
+            checks.push({
+                valid: !(browserVersion > 0 && browserVersion < 67),
+                reason: '浏览器版本过低，需要 67 或更高版本（当前: ' + browserVersion + '）',
+                warning: 'Passkey: Chrome/Edge version too old, require 67+, got ' + browserVersion
+            });
+
+            if (profile.isAndroid) {
+                checks.push({
+                    valid: !(browserVersion > 0 && browserVersion < 70),
+                    reason: 'Android Chrome 版本过低，需要 70 或更高版本（当前: ' + browserVersion + '）',
+                    warning: 'Passkey: Android Chrome requires 70+ for full WebAuthn support'
+                });
             }
         }
-        
+
+        for (var i = 0; i < checks.length; i++) {
+            if (!checks[i].valid) {
+                return {
+                    supported: false,
+                    reason: checks[i].reason,
+                    warning: checks[i].warning
+                };
+            }
+        }
+
+        return {
+            supported: true,
+            reason: '',
+            warning: ''
+        };
+    }
+
+    function isSupported() {
+        var status = evaluateSupportStatus();
+
+        if (!status.supported && status.warning) {
+            console.warn(status.warning);
+            return false;
+        }
+
         // 检查用户验证支持
         try {
             if (!PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) {
@@ -278,7 +310,7 @@ var PasskeyManager = (function() {
         } catch (e) {
             // 某些旧浏览器不支持此方法
         }
-        
+
         return true;
     }
     
@@ -286,49 +318,11 @@ var PasskeyManager = (function() {
      * 获取不支持时的详细错误信息
      */
     function getUnsupportedReason() {
-        var info = BrowserDetector.getDetailedInfo();
-        
-        if (typeof window.PublicKeyCredential === 'undefined') {
-            return '您的浏览器不支持 WebAuthn API';
+        var status = evaluateSupportStatus();
+        if (!status.supported) {
+            return status.reason;
         }
-        
-        if (typeof navigator.credentials === 'undefined') {
-            return '您的浏览器不支持凭证管理 API';
-        }
-        
-        if (location.protocol !== 'https:' && 
-            location.hostname !== 'localhost' && 
-            location.hostname !== '127.0.0.1') {
-            return 'WebAuthn 需要使用 HTTPS 协议';
-        }
-        
-        if (BrowserDetector.isFirefox()) {
-            var version = BrowserDetector.getBrowserVersion();
-            if (version > 0 && version < 60) {
-                return 'Firefox 版本过低，需要 60 或更高版本（当前: ' + version + '）';
-            }
-            if (BrowserDetector.isAndroid() && version < 92) {
-                return 'Android Firefox 版本过低，需要 92 或更高版本（当前: ' + version + '）';
-            }
-        }
-        
-        if (BrowserDetector.isSafari()) {
-            var version = BrowserDetector.getBrowserVersion();
-            if (BrowserDetector.isIOS() && version > 0 && version < 14) {
-                return 'iOS Safari 版本过低，需要 14 或更高版本（当前: ' + version + '）';
-            }
-            if (BrowserDetector.isMac() && version > 0 && version < 13) {
-                return 'macOS Safari 版本过低，需要 13 或更高版本（当前: ' + version + '）';
-            }
-        }
-        
-        if (BrowserDetector.isChrome() || BrowserDetector.isEdge()) {
-            var version = BrowserDetector.getBrowserVersion();
-            if (version > 0 && version < 67) {
-                return '浏览器版本过低，需要 67 或更高版本（当前: ' + version + '）';
-            }
-        }
-        
+
         return '您的设备或浏览器不支持 Passkey 功能';
     }
     
@@ -340,6 +334,491 @@ var PasskeyManager = (function() {
             return { connected: false, error: '网络连接已断开，请检查您的网络' };
         }
         return { connected: true };
+    }
+
+    /**
+     * 根据设备给出认证提示
+     */
+    function showDeviceVerificationHint() {
+        var profile = getCompatibilityProfile();
+        showNotification(getVerificationHintMessage(profile), 'info');
+    }
+
+    /**
+     * 通用前置检查
+     */
+    function runCommonPreChecks() {
+        if (!isSupported()) {
+            showNotification(getUnsupportedReason(), 'error');
+            throw new Error('Browser not supported');
+        }
+
+        var networkStatus = checkNetwork();
+        if (!networkStatus.connected) {
+            showNotification(networkStatus.error, 'error');
+            throw new Error('Network disconnected');
+        }
+    }
+
+    /**
+     * 默认请求超时（移动端适当更长）
+     */
+    function getDefaultRequestTimeout() {
+        return BrowserDetector.isMobile() ? 20000 : 15000;
+    }
+
+    var MIN_WEBAUTHN_TIMEOUT = 90000;
+
+    function getCompatibilityProfile() {
+        var isSafari = BrowserDetector.isSafari();
+        var isIOS = BrowserDetector.isIOS();
+        var isMac = BrowserDetector.isMac();
+        var isAndroid = BrowserDetector.isAndroid();
+        var isFirefox = BrowserDetector.isFirefox();
+        var isMobile = BrowserDetector.isMobile();
+
+        return {
+            isSafariIOS: isSafari && isIOS,
+            isSafariMac: isSafari && isMac,
+            isAndroid: isAndroid,
+            isFirefox: isFirefox,
+            isMobile: isMobile,
+            preferUserVerification: isSafari,
+            preferResidentKey: isAndroid || (isSafari && isIOS),
+            needsExtendedTimeout: isAndroid || isFirefox || isMobile || (isSafari && (isIOS || isMac)),
+            supportsThirdPartyHints: BrowserDetector.isChrome() || BrowserDetector.isEdge()
+        };
+    }
+
+    function getVerificationHintMessage(profile) {
+        if (profile.isSafariIOS) {
+            return BrowserDetector.isIPad()
+                ? '请在 iPad 上使用 Face ID 或触控 ID 完成验证'
+                : '请在 iPhone 上使用 Face ID 或触控 ID 完成验证';
+        }
+
+        if (profile.isSafariMac) {
+            return '请在 Mac 上使用 Touch ID 完成验证';
+        }
+
+        if (profile.isAndroid) {
+            return '请使用指纹或设备锁屏密码完成验证';
+        }
+
+        return '请使用您的设备完成身份验证...';
+    }
+
+    function applyCompatibilityTweaks(publicKeyOptions, mode, profile) {
+        var currentProfile = profile || getCompatibilityProfile();
+
+        if (mode === 'register') {
+            if (currentProfile.preferUserVerification && !publicKeyOptions.authenticatorSelection.userVerification) {
+                publicKeyOptions.authenticatorSelection.userVerification = 'preferred';
+            }
+
+            if (currentProfile.preferResidentKey && typeof publicKeyOptions.authenticatorSelection.residentKey === 'undefined') {
+                publicKeyOptions.authenticatorSelection.residentKey = 'preferred';
+            }
+        }
+
+        if (currentProfile.needsExtendedTimeout) {
+            ensureMinTimeout(publicKeyOptions, MIN_WEBAUTHN_TIMEOUT);
+        }
+
+        return publicKeyOptions;
+    }
+
+    var ACTION_NAMES = {
+        registerOptions: 'register-options',
+        registerVerify: 'register-verify',
+        loginOptions: 'login-options',
+        loginVerify: 'login-verify'
+    };
+
+    function getActionUrl(actionName) {
+        return PASSKEY_ACTION_URL + '?do=' + actionName;
+    }
+
+    function decodeCredentialDescriptors(descriptors) {
+        if (!descriptors || !descriptors.length) {
+            return [];
+        }
+
+        return descriptors.map(function(cred) {
+            return {
+                type: cred.type,
+                id: base64urlDecode(cred.id),
+                transports: cred.transports || []
+            };
+        });
+    }
+
+    function buildRegistrationPublicKeyOptions(options) {
+        if (!options || !options.challenge || !options.user || !options.rp) {
+            throw new Error('服务器返回的数据不完整');
+        }
+
+        var publicKeyOptions = {
+            challenge: base64urlDecode(options.challenge),
+            rp: options.rp,
+            user: {
+                id: base64urlDecode(options.user.id),
+                name: options.user.name,
+                displayName: options.user.displayName
+            },
+            pubKeyCredParams: options.pubKeyCredParams,
+            timeout: options.timeout || 60000,
+            attestation: options.attestation || 'none',
+            authenticatorSelection: options.authenticatorSelection || {}
+        };
+
+        return applyCompatibilityTweaks(publicKeyOptions, 'register');
+    }
+
+    function buildLoginPublicKeyOptions(options) {
+        if (!options || !options.challenge) {
+            throw new Error('服务器返回的数据不完整');
+        }
+
+        var publicKeyOptions = {
+            challenge: base64urlDecode(options.challenge),
+            timeout: options.timeout || 60000,
+            rpId: options.rpId,
+            userVerification: options.userVerification || 'preferred'
+        };
+
+        if (options.allowCredentials && options.allowCredentials.length > 0) {
+            publicKeyOptions.allowCredentials = decodeCredentialDescriptors(options.allowCredentials);
+        }
+
+        return applyCompatibilityTweaks(publicKeyOptions, 'login');
+    }
+
+    function serializeAttestationCredential(credential) {
+        if (!credential || !credential.id || !credential.rawId || !credential.response) {
+            throw new Error('凭证数据不完整');
+        }
+
+        return {
+            id: credential.id,
+            rawId: credential.id,
+            type: credential.type,
+            response: {
+                clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
+                attestationObject: arrayBufferToBase64(credential.response.attestationObject)
+            }
+        };
+    }
+
+    function serializeLoginAssertion(assertion) {
+        if (!assertion || !assertion.id || !assertion.response) {
+            throw new Error('认证数据不完整');
+        }
+
+        return {
+            id: assertion.id,
+            rawId: assertion.id,
+            type: assertion.type,
+            response: {
+                authenticatorData: arrayBufferToBase64(assertion.response.authenticatorData),
+                clientDataJSON: arrayBufferToBase64(assertion.response.clientDataJSON),
+                signature: arrayBufferToBase64(assertion.response.signature),
+                userHandle: assertion.response.userHandle ?
+                    arrayBufferToBase64(assertion.response.userHandle) : null
+            }
+        };
+    }
+
+    /**
+     * 带超时的 fetch，保持后端交互不变
+     */
+    function fetchWithTimeout(url, fetchOptions, timeout, timeoutMessage) {
+        return new Promise(function(resolve, reject) {
+            var didFinish = false;
+            var timer = setTimeout(function() {
+                if (!didFinish) {
+                    didFinish = true;
+                    reject(new Error(timeoutMessage));
+                }
+            }, timeout);
+
+            fetch(url, fetchOptions)
+                .then(function(response) {
+                    if (didFinish) {
+                        return;
+                    }
+                    didFinish = true;
+                    clearTimeout(timer);
+                    resolve(response);
+                })
+                .catch(function(error) {
+                    if (didFinish) {
+                        return;
+                    }
+                    didFinish = true;
+                    clearTimeout(timer);
+                    reject(error);
+                });
+        });
+    }
+
+    /**
+     * 请求并解析 JSON
+     */
+    function fetchJsonWithTimeout(url, fetchOptions, timeout, timeoutMessage) {
+        return fetchWithTimeout(url, fetchOptions, timeout, timeoutMessage)
+            .then(function(response) {
+                if (!response.ok) {
+                    throw new Error('服务器响应错误: ' + response.status);
+                }
+                return response.json();
+            });
+    }
+
+    /**
+     * 设置最小超时
+     */
+    function ensureMinTimeout(options, minTimeout) {
+        if (!options.timeout || options.timeout < minTimeout) {
+            options.timeout = minTimeout;
+        }
+    }
+
+    /**
+     * 第三方通行密钥管理器常见传输方式
+     */
+    var EXTERNAL_CREDENTIAL_TRANSPORTS = ['hybrid', 'internal', 'usb', 'nfc', 'ble'];
+
+    function mergeTransportList(transports) {
+        var merged = [];
+
+        function pushUnique(value) {
+            if (!value || typeof value !== 'string') {
+                return;
+            }
+            if (merged.indexOf(value) === -1) {
+                merged.push(value);
+            }
+        }
+
+        if (transports && transports.length) {
+            for (var i = 0; i < transports.length; i++) {
+                pushUnique(transports[i]);
+            }
+        }
+
+        for (var j = 0; j < EXTERNAL_CREDENTIAL_TRANSPORTS.length; j++) {
+            pushUnique(EXTERNAL_CREDENTIAL_TRANSPORTS[j]);
+        }
+
+        return merged;
+    }
+
+    function normalizeCredentialDescriptors(descriptors) {
+        if (!descriptors || !descriptors.length) {
+            return descriptors;
+        }
+
+        return descriptors.map(function(cred) {
+            return {
+                type: cred.type,
+                id: cred.id,
+                transports: mergeTransportList(cred.transports)
+            };
+        });
+    }
+
+    function mergeHints(existingHints, addedHints) {
+        var merged = [];
+
+        function pushUnique(value) {
+            if (!value || typeof value !== 'string') {
+                return;
+            }
+            if (merged.indexOf(value) === -1) {
+                merged.push(value);
+            }
+        }
+
+        if (existingHints && existingHints.length) {
+            for (var i = 0; i < existingHints.length; i++) {
+                pushUnique(existingHints[i]);
+            }
+        }
+
+        if (addedHints && addedHints.length) {
+            for (var j = 0; j < addedHints.length; j++) {
+                pushUnique(addedHints[j]);
+            }
+        }
+
+        return merged;
+    }
+
+    /**
+     * 兼容第三方通行密钥管理器（如 Bitwarden）
+     */
+    function applyThirdPartyManagerSupport(publicKeyOptions, mode) {
+        var profile = getCompatibilityProfile();
+
+        if (publicKeyOptions.allowCredentials && publicKeyOptions.allowCredentials.length > 0) {
+            publicKeyOptions.allowCredentials = normalizeCredentialDescriptors(publicKeyOptions.allowCredentials);
+        }
+
+        if (publicKeyOptions.excludeCredentials && publicKeyOptions.excludeCredentials.length > 0) {
+            publicKeyOptions.excludeCredentials = normalizeCredentialDescriptors(publicKeyOptions.excludeCredentials);
+        }
+
+        if (typeof publicKeyOptions.hints !== 'undefined' || profile.supportsThirdPartyHints) {
+            publicKeyOptions.hints = mergeHints(publicKeyOptions.hints, ['client-device', 'security-key']);
+        }
+
+        if (!publicKeyOptions.extensions) {
+            publicKeyOptions.extensions = {};
+        }
+
+        if (mode === 'create' && typeof publicKeyOptions.extensions.credProps === 'undefined') {
+            publicKeyOptions.extensions.credProps = true;
+        }
+
+        return publicKeyOptions;
+    }
+
+    function cloneCreatePublicKeyOptions(publicKeyOptions) {
+        var cloned = {};
+        var key;
+
+        for (key in publicKeyOptions) {
+            if (publicKeyOptions.hasOwnProperty(key)) {
+                cloned[key] = publicKeyOptions[key];
+            }
+        }
+
+        if (publicKeyOptions.authenticatorSelection) {
+            cloned.authenticatorSelection = {};
+            for (key in publicKeyOptions.authenticatorSelection) {
+                if (publicKeyOptions.authenticatorSelection.hasOwnProperty(key)) {
+                    cloned.authenticatorSelection[key] = publicKeyOptions.authenticatorSelection[key];
+                }
+            }
+        }
+
+        if (publicKeyOptions.excludeCredentials) {
+            cloned.excludeCredentials = publicKeyOptions.excludeCredentials.slice();
+        }
+
+        if (publicKeyOptions.pubKeyCredParams) {
+            cloned.pubKeyCredParams = publicKeyOptions.pubKeyCredParams.slice();
+        }
+
+        if (publicKeyOptions.hints) {
+            cloned.hints = publicKeyOptions.hints.slice();
+        }
+
+        if (publicKeyOptions.extensions) {
+            cloned.extensions = {};
+            for (key in publicKeyOptions.extensions) {
+                if (publicKeyOptions.extensions.hasOwnProperty(key)) {
+                    cloned.extensions[key] = publicKeyOptions.extensions[key];
+                }
+            }
+        }
+
+        return cloned;
+    }
+
+    function createCredentialWithThirdPartyFallback(publicKeyOptions) {
+        applyThirdPartyManagerSupport(publicKeyOptions, 'create');
+
+        return navigator.credentials.create({ publicKey: publicKeyOptions })
+            .catch(function(error) {
+                var canRetry = error && (error.name === 'NotSupportedError' || error.name === 'ConstraintError');
+                var isPlatformOnly = publicKeyOptions.authenticatorSelection &&
+                    publicKeyOptions.authenticatorSelection.authenticatorAttachment === 'platform';
+
+                if (!canRetry || !isPlatformOnly) {
+                    throw error;
+                }
+
+                var retryOptions = cloneCreatePublicKeyOptions(publicKeyOptions);
+                delete retryOptions.authenticatorSelection.authenticatorAttachment;
+                applyThirdPartyManagerSupport(retryOptions, 'create');
+                return navigator.credentials.create({ publicKey: retryOptions });
+            });
+    }
+
+    function getCredentialWithThirdPartySupport(publicKeyOptions) {
+        applyThirdPartyManagerSupport(publicKeyOptions, 'get');
+
+        return navigator.credentials.get({
+            publicKey: publicKeyOptions,
+            mediation: 'optional'
+        }).catch(function(error) {
+            if (error && error.name === 'TypeError') {
+                return navigator.credentials.get({
+                    publicKey: publicKeyOptions
+                });
+            }
+            throw error;
+        });
+    }
+
+    /**
+     * 统一映射错误文案
+     */
+    function getFriendlyErrorMessage(error, mode) {
+        var errorMessage = error && error.message ? error.message : '未知错误';
+
+        if (error.name === 'NotAllowedError') {
+            if (mode === 'registerWithInfo') {
+                return '注册已取消或超时，请重试';
+            }
+            return BrowserDetector.isMobile()
+                ? '操作已取消或超时，请重试'
+                : '操作已取消或超时，请确保您的设备已准备好';
+        }
+
+        if (error.name === 'InvalidStateError') {
+            if (mode === 'login') {
+                return '您的设备尚未注册通行秘钥';
+            }
+            return '此设备已经注册过 Passkey';
+        }
+
+        if (error.name === 'NotSupportedError') {
+            if (mode === 'registerWithInfo') {
+                return '您的设备不支持此认证方式';
+            }
+            if (BrowserDetector.isIOS()) {
+                return '您的设备不支持 Passkey，需要支持 Face ID 或触控 ID 的设备';
+            }
+            if (BrowserDetector.isAndroid()) {
+                return '您的设备不支持 Passkey，需要支持指纹或设备锁屏的设备';
+            }
+            return '您的设备不支持此认证方式';
+        }
+
+        if (error.name === 'SecurityError') {
+            return '安全错误：请确保网站使用 HTTPS 连接';
+        }
+
+        if (error.name === 'AbortError') {
+            return '操作被中断，请重试';
+        }
+
+        if (error.name === 'TimeoutError') {
+            return '操作超时，请检查您的设备并重试';
+        }
+
+        if (error.message && error.message.indexOf('timeout') > -1) {
+            return '操作超时，请检查网络连接后重试';
+        }
+
+        if (error.message && error.message.indexOf('Network') > -1) {
+            return '网络错误，请检查您的网络连接';
+        }
+
+        return errorMessage;
     }
     
     /**
@@ -452,21 +931,6 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * Base64URL 编码
-     */
-    function base64urlEncode(buffer) {
-        var binary = '';
-        var bytes = new Uint8Array(buffer);
-        for (var i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
-        }
-        return btoa(binary)
-            .replace(/\+/g, '-')
-            .replace(/\//g, '_')
-            .replace(/=/g, '');
-    }
-    
-    /**
      * 数组缓冲区转 Base64
      */
     function arrayBufferToBase64(buffer) {
@@ -479,480 +943,155 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 注册 Passkey（增强版）
+     * 注册 Passkey
      */
     function register() {
         return new Promise(function(resolve, reject) {
-            // 检查浏览器支持
-            if (!isSupported()) {
-                var errorMsg = getUnsupportedReason();
-                showNotification(errorMsg, 'error');
-                reject(new Error('Browser not supported'));
+            try {
+                runCommonPreChecks();
+            } catch (preCheckError) {
+                reject(preCheckError);
                 return;
             }
-            
-            // 检查网络连接
-            var networkStatus = checkNetwork();
-            if (!networkStatus.connected) {
-                showNotification(networkStatus.error, 'error');
-                reject(new Error('Network disconnected'));
-                return;
-            }
-            
-            var info = BrowserDetector.getDetailedInfo();
-            
-            // iOS Safari 特殊提示
-            if (BrowserDetector.isSafari() && BrowserDetector.isIOS()) {
-                if (BrowserDetector.isIPad()) {
-                    showNotification('请在 iPad 上使用 Face ID 或触控 ID 完成验证', 'info');
-                } else {
-                    showNotification('请在 iPhone 上使用 Face ID 或触控 ID 完成验证', 'info');
-                }
-            } else if (BrowserDetector.isSafari() && BrowserDetector.isMac()) {
-                showNotification('请在 Mac 上使用 Touch ID 完成验证', 'info');
-            } else if (BrowserDetector.isAndroid()) {
-                showNotification('请使用指纹或设备锁屏密码完成验证', 'info');
-            } else {
-                showNotification('请使用您的设备完成身份验证...', 'info');
-            }
-            
+
+            showDeviceVerificationHint();
             showNotification('正在准备注册...', 'info');
-            
-            // 获取注册选项
-            var timeout = BrowserDetector.isMobile() ? 20000 : 15000;
-            var fetchTimeout = setTimeout(function() {
-                reject(new Error('请求超时，请检查网络连接'));
-            }, timeout);
-            
-            fetch(PASSKEY_ACTION_URL + '?do=register-options')
-                .then(function(response) {
-                    clearTimeout(fetchTimeout);
-                    if (!response.ok) {
-                        throw new Error('服务器响应错误: ' + response.status);
-                    }
-                    return response.json();
-                })
+
+            var timeout = getDefaultRequestTimeout();
+
+            fetchJsonWithTimeout(
+                getActionUrl(ACTION_NAMES.registerOptions),
+                undefined,
+                timeout,
+                '请求超时，请检查网络连接'
+            )
                 .then(function(data) {
                     if (!data.success) {
                         throw new Error(data.error || '获取注册选项失败');
                     }
-                    
+
                     var options = data.data;
-                    
-                    // 验证服务器返回的数据
-                    if (!options.challenge || !options.user || !options.rp) {
-                        throw new Error('服务器返回的数据不完整');
+                    var profile = getCompatibilityProfile();
+                    var publicKeyOptions = buildRegistrationPublicKeyOptions(options);
+
+                    if (profile.isSafariMac && options.excludeCredentials && options.excludeCredentials.length > 0) {
+                        publicKeyOptions.excludeCredentials = decodeCredentialDescriptors(options.excludeCredentials);
                     }
-                    
-                    // 转换为 WebAuthn 格式
-                    var publicKeyOptions = {
-                        challenge: base64urlDecode(options.challenge),
-                        rp: options.rp,
-                        user: {
-                            id: base64urlDecode(options.user.id),
-                            name: options.user.name,
-                            displayName: options.user.displayName
-                        },
-                        pubKeyCredParams: options.pubKeyCredParams,
-                        timeout: options.timeout || 60000,
-                        attestation: options.attestation || 'none',
-                        authenticatorSelection: options.authenticatorSelection || {}
-                    };
-                    
-                    // Safari 特殊处理
-                    if (BrowserDetector.isSafari()) {
-                        // Safari 可能需要用户手势才能调用 WebAuthn API
-                        // 某些 Safari 版本对 authenticatorSelection 支持不完整
-                        if (!publicKeyOptions.authenticatorSelection.userVerification) {
-                            publicKeyOptions.authenticatorSelection.userVerification = 'preferred';
-                        }
-                        
-                        // iOS Safari 14.5+ 需要 residentKey 参数
-                        if (BrowserDetector.isIOS() && typeof publicKeyOptions.authenticatorSelection.residentKey === 'undefined') {
-                            publicKeyOptions.authenticatorSelection.residentKey = 'preferred';
-                        }
-                        
-                        // macOS Safari 可能需要 excludeCredentials
-                        if (BrowserDetector.isMac() && options.excludeCredentials && options.excludeCredentials.length > 0) {
-                            publicKeyOptions.excludeCredentials = options.excludeCredentials.map(function(cred) {
-                                return {
-                                    type: cred.type,
-                                    id: base64urlDecode(cred.id)
-                                };
-                            });
-                        }
-                    }
-                    
-                    // Android Chrome 特殊处理
-                    if (BrowserDetector.isAndroid()) {
-                        // Android 可能需要调整超时时间
-                        if (!publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                        
-                        // 确保支持 residentKey
-                        if (typeof publicKeyOptions.authenticatorSelection.residentKey === 'undefined') {
-                            publicKeyOptions.authenticatorSelection.residentKey = 'preferred';
-                        }
-                    }
-                    
-                    // Firefox 特殊处理
-                    if (BrowserDetector.isFirefox()) {
-                        // Firefox 可能需要更长的超时时间
-                        if (!publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                    }
-                    
-                    // 移动设备优化
-                    if (BrowserDetector.isMobile()) {
-                        // 移动设备可能需要更长的超时时间
-                        if (!publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                    }
-                    
-                    // 创建凭证
-                    return navigator.credentials.create({
-                        publicKey: publicKeyOptions
-                    });
+
+                    return createCredentialWithThirdPartyFallback(publicKeyOptions);
                 })
                 .then(function(credential) {
                     if (!credential) {
                         throw new Error('创建凭证失败');
                     }
-                    
-                    // 验证凭证数据
-                    if (!credential.id || !credential.rawId || !credential.response) {
-                        throw new Error('凭证数据不完整');
-                    }
-                    
+
                     showNotification('正在保存凭证...', 'info');
-                    
-                    // 准备要发送的数据
-                    // 注意：id 是 base64url 编码，rawId 是 ArrayBuffer
-                    // 为了一致性，我们统一使用 id（它已是字符串）
-                    var data = {
-                        id: credential.id,
-                        rawId: credential.id,  // 直接使用 id（base64url）
-                        type: credential.type,
-                        response: {
-                            clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
-                            attestationObject: arrayBufferToBase64(credential.response.attestationObject)
-                        }
-                    };
-                    
-                    // 发送到服务器验证
-                    timeout = BrowserDetector.isMobile() ? 20000 : 15000;
-                    var verifyTimeout = setTimeout(function() {
-                        reject(new Error('验证超时，请重试'));
-                    }, timeout);
-                    
-                    return fetch(PASSKEY_ACTION_URL + '?do=register-verify', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
+
+                    return fetchJsonWithTimeout(
+                        getActionUrl(ACTION_NAMES.registerVerify),
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(serializeAttestationCredential(credential))
                         },
-                        body: JSON.stringify(data)
-                    }).then(function(response) {
-                        clearTimeout(verifyTimeout);
-                        return response;
-                    });
-                })
-                .then(function(response) {
-                    if (!response.ok) {
-                        throw new Error('服务器响应错误: ' + response.status);
-                    }
-                    return response.json();
+                        getDefaultRequestTimeout(),
+                        '验证超时，请重试'
+                    );
                 })
                 .then(function(data) {
                     if (!data.success) {
                         throw new Error(data.error || '注册失败');
                     }
-                    
+
                     showNotification('Passkey 注册成功！', 'success');
                     resolve(data.data);
                 })
                 .catch(function(error) {
-                    clearTimeout(fetchTimeout);
                     console.error('Passkey register error:', error);
-                    
-                    var errorMessage = error.message || '未知错误';
-                    
-                    // 友好的错误信息
-                    if (error.name === 'NotAllowedError') {
-                        if (BrowserDetector.isMobile()) {
-                            errorMessage = '操作已取消或超时，请重试';
-                        } else {
-                            errorMessage = '操作已取消或超时，请确保您的设备已准备好';
-                        }
-                    } else if (error.name === 'InvalidStateError') {
-                        errorMessage = '此设备已经注册过 Passkey';
-                    } else if (error.name === 'NotSupportedError') {
-                        errorMessage = '您的设备不支持此认证方式';
-                        if (BrowserDetector.isIOS()) {
-                            errorMessage = '您的设备不支持 Passkey，需要支持 Face ID 或触控 ID 的设备';
-                        } else if (BrowserDetector.isAndroid()) {
-                            errorMessage = '您的设备不支持 Passkey，需要支持指纹或设备锁屏的设备';
-                        }
-                    } else if (error.name === 'SecurityError') {
-                        errorMessage = '安全错误：请确保网站使用 HTTPS 连接';
-                    } else if (error.name === 'AbortError') {
-                        errorMessage = '操作被中断，请重试';
-                    } else if (error.name === 'TimeoutError') {
-                        errorMessage = '操作超时，请检查您的设备并重试';
-                    } else if (error.message && error.message.indexOf('timeout') > -1) {
-                        errorMessage = '操作超时，请检查网络连接后重试';
-                    } else if (error.message && error.message.indexOf('Network') > -1) {
-                        errorMessage = '网络错误，请检查您的网络连接';
-                    }
-                    
-                    showNotification('注册失败: ' + errorMessage, 'error');
+                    showNotification('注册失败: ' + getFriendlyErrorMessage(error, 'register'), 'error');
                     reject(error);
                 });
         });
     }
     
     /**
-     * 使用 Passkey 登录（增强版）
+     * 使用 Passkey 登录
      */
     function login() {
         return new Promise(function(resolve, reject) {
-            // 检查浏览器支持
-            if (!isSupported()) {
-                var errorMsg = getUnsupportedReason();
-                showNotification(errorMsg, 'error');
-                reject(new Error('Browser not supported'));
+            try {
+                runCommonPreChecks();
+            } catch (preCheckError) {
+                reject(preCheckError);
                 return;
             }
-            
-            // 检查网络连接
-            var networkStatus = checkNetwork();
-            if (!networkStatus.connected) {
-                showNotification(networkStatus.error, 'error');
-                reject(new Error('Network disconnected'));
-                return;
-            }
-            
-            var info = BrowserDetector.getDetailedInfo();
-            
-            // iOS Safari 特殊提示
-            if (BrowserDetector.isSafari() && BrowserDetector.isIOS()) {
-                if (BrowserDetector.isIPad()) {
-                    showNotification('请在 iPad 上使用 Face ID 或触控 ID 完成验证', 'info');
-                } else {
-                    showNotification('请在 iPhone 上使用 Face ID 或触控 ID 完成验证', 'info');
-                }
-            } else if (BrowserDetector.isSafari() && BrowserDetector.isMac()) {
-                showNotification('请在 Mac 上使用 Touch ID 完成验证', 'info');
-            } else if (BrowserDetector.isAndroid()) {
-                showNotification('请使用指纹或设备锁屏密码完成验证', 'info');
-            } else {
-                showNotification('请使用您的设备完成身份验证...', 'info');
-            }
-            
+
+            showDeviceVerificationHint();
             showNotification('正在准备登录...', 'info');
-            
-            // 获取登录选项
-            var timeout = BrowserDetector.isMobile() ? 20000 : 15000;
-            var fetchTimeout = setTimeout(function() {
-                reject(new Error('请求超时，请检查网络连接'));
-            }, timeout);
-            
-            fetch(PASSKEY_ACTION_URL + '?do=login-options')
-                .then(function(response) {
-                    clearTimeout(fetchTimeout);
-                    if (!response.ok) {
-                        throw new Error('服务器响应错误: ' + response.status);
-                    }
-                    return response.json();
-                })
+
+            fetchJsonWithTimeout(
+                getActionUrl(ACTION_NAMES.loginOptions),
+                undefined,
+                getDefaultRequestTimeout(),
+                '请求超时，请检查网络连接'
+            )
                 .then(function(data) {
                     if (!data.success) {
                         throw new Error(data.error || '获取登录选项失败');
                     }
-                    
+
                     var options = data.data;
-                    
-                    // 验证服务器返回的数据
-                    if (!options.challenge) {
-                        throw new Error('服务器返回的数据不完整');
-                    }
-                    
-                    // 转换 challenge 为 ArrayBuffer
-                    var publicKeyOptions = {
-                        challenge: base64urlDecode(options.challenge),
-                        timeout: options.timeout || 60000,
-                        rpId: options.rpId,
-                        userVerification: options.userVerification || 'preferred'
-                    };
-                    
-                    // 如果有 allowCredentials，也要处理
-                    if (options.allowCredentials && options.allowCredentials.length > 0) {
-                        publicKeyOptions.allowCredentials = options.allowCredentials.map(function(cred) {
-                            return {
-                                type: cred.type,
-                                id: base64urlDecode(cred.id)
-                            };
-                        });
-                    }
-                    
-                    // Safari 特殊处理
-                    if (BrowserDetector.isSafari()) {
-                        // iOS Safari 可能需要调整超时
-                        if (BrowserDetector.isIOS() && !publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                        
-                        // macOS Safari 可能需要更长的超时
-                        if (BrowserDetector.isMac() && !publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                    }
-                    
-                    // Android Chrome 特殊处理
-                    if (BrowserDetector.isAndroid()) {
-                        // Android 可能需要调整超时时间
-                        if (!publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                    }
-                    
-                    // Firefox 特殊处理
-                    if (BrowserDetector.isFirefox()) {
-                        // Firefox 可能需要更长的超时时间
-                        if (!publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                    }
-                    
-                    // 移动设备优化
-                    if (BrowserDetector.isMobile()) {
-                        // 移动设备可能需要更长的超时时间
-                        if (!publicKeyOptions.timeout || publicKeyOptions.timeout < 90000) {
-                            publicKeyOptions.timeout = 90000;
-                        }
-                    }
-                    
-                    // 获取凭证
-                    return navigator.credentials.get({
-                        publicKey: publicKeyOptions
-                    });
+                    var publicKeyOptions = buildLoginPublicKeyOptions(options);
+
+                    return getCredentialWithThirdPartySupport(publicKeyOptions);
                 })
                 .then(function(assertion) {
                     if (!assertion) {
                         throw new Error('认证失败');
                     }
-                    
-                    // 验证断言数据
-                    if (!assertion.id || !assertion.response) {
-                        throw new Error('认证数据不完整');
-                    }
-                    
+
                     showNotification('正在验证身份...', 'info');
-                    
-                    // 准备要发送的数据
-                    // 注意：id 是 base64url 编码，rawId 是 ArrayBuffer
-                    // 为了一致性，我们统一使用 id（它已是字符串）
-                    var data = {
-                        id: assertion.id,
-                        rawId: assertion.id,  // 直接使用 id（base64url）
-                        type: assertion.type,
-                        response: {
-                            authenticatorData: arrayBufferToBase64(assertion.response.authenticatorData),
-                            clientDataJSON: arrayBufferToBase64(assertion.response.clientDataJSON),
-                            signature: arrayBufferToBase64(assertion.response.signature),
-                            userHandle: assertion.response.userHandle ? 
-                                arrayBufferToBase64(assertion.response.userHandle) : null
-                        }
-                    };
-                    
-                    // 发送到服务器验证
-                    timeout = BrowserDetector.isMobile() ? 20000 : 15000;
-                    var verifyTimeout = setTimeout(function() {
-                        reject(new Error('验证超时，请重试'));
-                    }, timeout);
-                    
-                    return fetch(PASSKEY_ACTION_URL + '?do=login-verify', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
+
+                    return fetchJsonWithTimeout(
+                        getActionUrl(ACTION_NAMES.loginVerify),
+                        {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify(serializeLoginAssertion(assertion))
                         },
-                        body: JSON.stringify(data)
-                    }).then(function(response) {
-                        clearTimeout(verifyTimeout);
-                        return response;
-                    });
-                })
-                .then(function(response) {
-                    if (!response.ok) {
-                        throw new Error('服务器响应错误: ' + response.status);
-                    }
-                    return response.json();
+                        getDefaultRequestTimeout(),
+                        '验证超时，请重试'
+                    );
                 })
                 .then(function(data) {
-                    // 检查是否需要注册
                     if (data.needRegister) {
                         showNotification('此设备尚未注册，准备创建新账户...', 'info');
-                        // 显示注册表单
                         return showRegisterForm().then(function(userInfo) {
-                            // 用户填写完信息，开始注册流程
                             return registerWithInfo(userInfo);
                         });
                     }
-                    
+
                     if (!data.success) {
                         throw new Error(data.error || '登录失败');
                     }
-                    
-                    // 登录成功，立即跳转
+
                     showNotification('登录成功！欢迎回来，' + (data.data.user ? data.data.user.screenName : ''), 'success');
-                    
-                    // 立即跳转，不要延迟
+
                     if (data.data.redirect) {
                         window.location.href = data.data.redirect;
                     } else {
-                        // 如果没有 redirect，刷新页面
                         window.location.reload();
                     }
-                    
+
                     resolve(data.data);
                 })
                 .catch(function(error) {
-                    clearTimeout(fetchTimeout);
                     console.error('Passkey login error:', error);
-                    
-                    var errorMessage = error.message || '未知错误';
-                    
-                    // 友好的错误信息
-                    if (error.name === 'NotAllowedError') {
-                        if (BrowserDetector.isMobile()) {
-                            errorMessage = '操作已取消或超时，请重试';
-                        } else {
-                            errorMessage = '操作已取消或超时，请确保您的设备已准备好';
-                        }
-                    } else if (error.name === 'InvalidStateError') {
-                        errorMessage = '您的设备尚未注册通行秘钥';
-                    } else if (error.name === 'NotSupportedError') {
-                        errorMessage = '您的设备不支持此认证方式';
-                        if (BrowserDetector.isIOS()) {
-                            errorMessage = '您的设备不支持 Passkey，需要支持 Face ID 或触控 ID 的设备';
-                        } else if (BrowserDetector.isAndroid()) {
-                            errorMessage = '您的设备不支持 Passkey，需要支持指纹或设备锁屏的设备';
-                        }
-                    } else if (error.name === 'SecurityError') {
-                        errorMessage = '安全错误：请确保网站使用 HTTPS 连接';
-                    } else if (error.name === 'AbortError') {
-                        errorMessage = '操作被中断，请重试';
-                    } else if (error.name === 'TimeoutError') {
-                        errorMessage = '操作超时，请检查您的设备并重试';
-                    } else if (error.message && error.message.indexOf('timeout') > -1) {
-                        errorMessage = '操作超时，请检查网络连接后重试';
-                    } else if (error.message && error.message.indexOf('Network') > -1) {
-                        errorMessage = '网络错误，请检查您的网络连接';
-                    }
-                    
-                    showNotification('登录失败: ' + errorMessage, 'error');
+                    showNotification('登录失败: ' + getFriendlyErrorMessage(error, 'login'), 'error');
                     reject(error);
                 });
         });
@@ -1150,7 +1289,7 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 使用用户信息注册 Passkey（增强版）
+     * 使用用户信息注册 Passkey
      */
     function registerWithInfo(userInfo) {
         return new Promise(function(resolve, reject) {
@@ -1187,11 +1326,7 @@ var PasskeyManager = (function() {
             showNotification('正在创建账户...', 'info');
             
             // 获取注册选项（带用户信息）
-            var fetchTimeout = setTimeout(function() {
-                reject(new Error('请求超时，请检查网络连接'));
-            }, 15000);
-            
-            fetch(PASSKEY_ACTION_URL + '?do=register-options', {
+            fetchJsonWithTimeout(getActionUrl(ACTION_NAMES.registerOptions), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -1201,103 +1336,47 @@ var PasskeyManager = (function() {
                     email: emailResult.value,
                     screenName: screenNameResult.value || usernameResult.value
                 })
-            })
-            .then(function(response) {
-                clearTimeout(fetchTimeout);
-                if (!response.ok) {
-                    throw new Error('服务器响应错误: ' + response.status);
-                }
-                return response.json();
-            })
+            }, 15000, '请求超时，请检查网络连接')
             .then(function(data) {
                 if (!data.success) {
                     throw new Error(data.error || '获取注册选项失败');
                 }
                 
                 var options = data.data;
-                
-                // 验证服务器返回的数据
-                if (!options.challenge || !options.user || !options.rp) {
-                    throw new Error('服务器返回的数据不完整');
+                var profile = getCompatibilityProfile();
+                var publicKeyOptions = buildRegistrationPublicKeyOptions(options);
+
+                if (options.excludeCredentials && options.excludeCredentials.length > 0) {
+                    publicKeyOptions.excludeCredentials = decodeCredentialDescriptors(options.excludeCredentials);
                 }
                 
-                // 转换为 WebAuthn 格式
-                var publicKeyOptions = {
-                    challenge: base64urlDecode(options.challenge),
-                    rp: options.rp,
-                    user: {
-                        id: base64urlDecode(options.user.id),
-                        name: options.user.name,
-                        displayName: options.user.displayName
-                    },
-                    pubKeyCredParams: options.pubKeyCredParams,
-                    timeout: options.timeout || 60000,
-                    attestation: options.attestation || 'none',
-                    authenticatorSelection: options.authenticatorSelection || {}
-                };
-                
                 // Safari 特殊处理
-                if (BrowserDetector.isSafari()) {
+                if (profile.isSafariIOS || profile.isSafariMac) {
                     showNotification('您正在使用 Safari 浏览器，请在弹出窗口中完成验证', 'info');
-                    if (!publicKeyOptions.authenticatorSelection.userVerification) {
-                        publicKeyOptions.authenticatorSelection.userVerification = 'preferred';
-                    }
-                } else if (BrowserDetector.isFirefox()) {
+                } else if (profile.isFirefox) {
                     showNotification('您正在使用 Firefox 浏览器，请使用您的设备完成身份验证', 'info');
                 } else {
-                    showNotification('请使用您的设备完成身份验证...', 'info');
+                    showNotification(getVerificationHintMessage(profile), 'info');
                 }
                 
                 // 创建凭证
-                return navigator.credentials.create({
-                    publicKey: publicKeyOptions
-                });
+                return createCredentialWithThirdPartyFallback(publicKeyOptions);
             })
             .then(function(credential) {
                 if (!credential) {
                     throw new Error('创建凭证失败');
                 }
                 
-                // 验证凭证数据
-                if (!credential.id || !credential.rawId || !credential.response) {
-                    throw new Error('凭证数据不完整');
-                }
-                
                 showNotification('正在完成注册...', 'info');
                 
-                // 准备要发送的数据
-                // 注意：使用 credential.id（Base64URL 格式）保持与其他函数一致
-                var data = {
-                    id: credential.id,
-                    rawId: credential.id,  // 直接使用 id（base64url）
-                    type: credential.type,
-                    response: {
-                        clientDataJSON: arrayBufferToBase64(credential.response.clientDataJSON),
-                        attestationObject: arrayBufferToBase64(credential.response.attestationObject)
-                    }
-                };
-                
                 // 发送到服务器验证
-                var verifyTimeout = setTimeout(function() {
-                    reject(new Error('验证超时，请重试'));
-                }, 15000);
-                
-                return fetch(PASSKEY_ACTION_URL + '?do=register-verify', {
+                return fetchJsonWithTimeout(getActionUrl(ACTION_NAMES.registerVerify), {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(data)
-                }).then(function(response) {
-                    clearTimeout(verifyTimeout);
-                    return response;
-                });
-            })
-            .then(function(response) {
-                if (!response.ok) {
-                    throw new Error('服务器响应错误: ' + response.status);
-                }
-                return response.json();
+                    body: JSON.stringify(serializeAttestationCredential(credential))
+                }, 15000, '验证超时，请重试');
             })
             .then(function(data) {
                 if (!data.success) {
@@ -1318,26 +1397,9 @@ var PasskeyManager = (function() {
                 resolve(data.data);
             })
             .catch(function(error) {
-                clearTimeout(fetchTimeout);
                 console.error('Passkey register error:', error);
-                
-                var errorMessage = error.message;
-                
-                if (error.name === 'NotAllowedError') {
-                    errorMessage = '注册已取消或超时，请重试';
-                } else if (error.name === 'InvalidStateError') {
-                    errorMessage = '此设备已经注册过 Passkey';
-                } else if (error.name === 'NotSupportedError') {
-                    errorMessage = '您的设备不支持此认证方式';
-                } else if (error.name === 'SecurityError') {
-                    errorMessage = '安全错误：请确保网站使用 HTTPS 连接';
-                } else if (error.name === 'AbortError') {
-                    errorMessage = '操作被中断，请重试';
-                } else if (error.message && error.message.indexOf('timeout') > -1) {
-                    errorMessage = '操作超时，请检查网络连接后重试';
-                }
-                
-                showNotification('注册失败: ' + errorMessage, 'error');
+
+                showNotification('注册失败: ' + getFriendlyErrorMessage(error, 'registerWithInfo'), 'error');
                 reject(error);
             });
         });
@@ -1372,7 +1434,7 @@ var PasskeyManager = (function() {
     };
 })();
 
-// 自动初始化 - 优化适配 Typecho 登录页面（增强版）
+// 自动初始化 - 优化适配 Typecho 登录页面
 (function() {
     'use strict';
     

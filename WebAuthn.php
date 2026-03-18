@@ -7,7 +7,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
 }
 
 /**
- * WebAuthn 验证类 - 安全加固版
+ * WebAuthn 验证类
  * 实现完整的 WebAuthn 注册和认证验证
  * 严格限制只支持 PHP OpenSSL 原生支持的算法
  */

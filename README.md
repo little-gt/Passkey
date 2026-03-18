@@ -2,7 +2,7 @@
 
 一个为 Typecho 博客系统提供企业级 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。
 
-![Passkey](https://img.shields.io/badge/Passkey-v1.0.6-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+![Passkey](https://img.shields.io/badge/Passkey-v1.0.7-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 ![OpenSSL](https://img.shields.io/badge/OpenSSL-Required-721412?style=for-the-badge&logo=openssl&logoColor=white)
 ![PHP](https://img.shields.io/badge/PHP-7.4+-777BB4?style=for-the-badge&logo=php&logoColor=white)
 
@@ -886,9 +886,17 @@ PasskeyManager.showNotification('提示信息', 'info');
 
 ## 📜 版本说明
 
-### 当前版本：v1.0.6
+### 当前版本：v1.0.7
 
-**核心特性：** 移动端兼容性优化
+#### v1.0.7 (2026-03-18) - JavaScript优化
+
+**核心更新：**
+- ✅ **浏览器兼容策略统一化** - 将 WebAuthn 前端兼容逻辑收敛为统一规则模型，避免分散条件分支导致的维护困难
+- ✅ **支持性检测同源化** - `isSupported()` 与 `getUnsupportedReason()` 共用同一套评估器，判定与提示保持一致
+- ✅ **第三方通行密钥管理器兼容增强** - 优化对 Bitwarden 等插件场景的适配，增强跨设备/跨管理器使用体验
+- ✅ **注册/登录流程结构重构** - 抽离请求、选项构建、序列化、错误映射等公共逻辑，显著降低重复代码
+- ✅ **管理页通知系统优化** - 多条通知改为队列堆叠展示，修复通知重叠问题，移动端显示更稳定
+- ✅ **代码可维护性提升** - 清理冗余逻辑与无效分支，统一常量和动作路由构造，后续迭代更安全
 
 ### 版本更新历史
 
