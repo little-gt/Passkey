@@ -1203,6 +1203,7 @@ $pluginVersion = '1.0.8'; // 与 Plugin.php 中的版本号保持一致
                     </div>
                     <div class="passkey-footer-ieee">
                         <img src="<?php echo $pluginUrl; ?>/assist/css/ieee.svg" alt="Build by IEEE Engineer" width="40" height="auto">
+                        <span>IEEE Standard</span>
                     </div>
                 </div>
             </div>
