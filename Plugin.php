@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author GARFIELDTOM
- * @version 1.0.8
+ * @version 1.1.0
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.0.8';
+    const VERSION = '1.1.0';
     /**
      * 激活插件方法
      */
@@ -293,6 +293,30 @@ class Plugin implements PluginInterface
         
         $modeDescription = '选择如何将 Passkey 登录添加到登录页面';
         
+        $modeDescription .= '<style>
+        /* Passkey 插件 - 基础样式与暗色模式适配 */
+        .pk-info-box--blue { background: #f0f9ff; border-left: 3px solid #0ea5e9; }
+        .pk-info-box--gray { background: #f5f5f5; border-left: 3px solid #467B96; }
+        .pk-info-box--yellow { background: #fff3cd; border-left: 3px solid #ffc107; }
+        .pk-text-muted { color: #666; }
+        .pk-text-dim { color: #555; }
+        .pk-text-success { color: #155724; }
+        .pk-text-danger { color: #721c24; }
+        .pk-textarea-code { border: 1px solid #ddd; background: #fff; color: inherit; }
+        .pk-warn-danger { color: #dc2626; }
+        @media (prefers-color-scheme: dark) {
+            .pk-info-box--blue { background: #0c2d48; border-left-color: #0ea5e9; }
+            .pk-info-box--gray { background: #1a1a2e; border-left-color: #6ba3be; }
+            .pk-info-box--yellow { background: #332b00; border-left-color: #fbbf24; }
+            .pk-text-muted { color: #9ca3af; }
+            .pk-text-dim { color: #a3a3a3; }
+            .pk-text-success { color: #4ade80; }
+            .pk-text-danger { color: #f87171; }
+            .pk-textarea-code { border-color: #444; background: #1e1e1e; color: #e5e5e5; }
+            .pk-warn-danger { color: #f87171; }
+        }
+        </style>';
+        
         // 根据模式显示不同的说明
         if ($plugin && isset($plugin->mode)) {
             $version = self::VERSION;
@@ -300,11 +324,11 @@ class Plugin implements PluginInterface
             
             if ($plugin->mode == 'auto') {
                 // 自动模式说明
-                $modeDescription .= '<div style="background:#f0f9ff;padding:15px;margin-top:10px;border-left:3px solid #0ea5e9;">';
+                $modeDescription .= '<div class="pk-info-box--blue" style="padding:15px;margin-top:10px;">';
                 $modeDescription .= '<strong>自动注入模式</strong><br>';
-                $modeDescription .= '<p style="margin:10px 0;color:#666;">插件会自动在 Typecho 登录页面注入 Passkey 登录按钮，无需修改任何代码。</p>';
+                $modeDescription .= '<p style="margin:10px 0;" class="pk-text-muted">插件会自动在 Typecho 登录页面注入 Passkey 登录按钮，无需修改任何代码。</p>';
                 $modeDescription .= '<strong>实现方式：</strong><br>';
-                $modeDescription .= '<ul style="margin:5px 0;padding-left:20px;color:#555;">';
+                $modeDescription .= '<ul style="margin:5px 0;padding-left:20px;" class="pk-text-dim">';
                 $modeDescription .= '<li>在主题 <code>header.php</code> 中调用 <code>$this->header()</code> 时自动注入 CSS 和 JS 资源</li>';
                 $modeDescription .= '<li>JavaScript 检测登录表单并自动插入 Passkey 登录按钮</li>';
                 $modeDescription .= '<li>支持多种主题结构，智能适配不同的表单布局</li>';
@@ -314,16 +338,16 @@ class Plugin implements PluginInterface
                 
             } else if ($plugin->mode == 'manual') {
                 // 手动模式说明
-                $modeDescription .= '<div style="background:#f5f5f5;padding:15px;margin-top:10px;border-left:3px solid #467B96;">';
+                $modeDescription .= '<div class="pk-info-box--gray" style="padding:15px;margin-top:10px;">';
                 $modeDescription .= '<strong>手动添加方法</strong><br>';
-                $modeDescription .= '<p style="margin:10px 0;color:#666;">在您的主题登录页面中手动添加 Passkey 登录代码。</p>';
+                $modeDescription .= '<p style="margin:10px 0;" class="pk-text-muted">在您的主题登录页面中手动添加 Passkey 登录代码。</p>';
                 $modeDescription .= '<strong>步骤：</strong><br>';
-                $modeDescription .= '<ol style="margin:5px 0;padding-left:20px;color:#555;">';
+                $modeDescription .= '<ol style="margin:5px 0;padding-left:20px;" class="pk-text-dim">';
                 $modeDescription .= '<li>找到主题的登录模板文件（通常是 <code>/admin/login.php</code> 或 <code>page-login.php</code>）</li>';
                 $modeDescription .= '<li>找到登录表单 <code>&lt;form&gt;...&lt;/form&gt;</code></li>';
                 $modeDescription .= '<li>在表单结束标签 <code>&lt;/form&gt;</code> 后面添加以下代码</li>';
                 $modeDescription .= '</ol>';
-                $modeDescription .= '<textarea readonly onclick="this.select()" style="width:100%;height:220px;font-family:Consolas,Monaco,monospace;font-size:11px;margin-top:10px;padding:10px;border:1px solid #ddd;background:#fff;">';
+                $modeDescription .= '<textarea readonly onclick="this.select()" class="pk-textarea-code" style="width:100%;height:220px;font-family:Consolas,Monaco,monospace;font-size:11px;margin-top:10px;padding:10px;">';
                 $modeDescription .= htmlspecialchars('<!-- Passkey 登录 -->
 <link rel="stylesheet" href="' . $pluginUrl . '/assist/css/style.css?v=' . $version . '">
 <script>var PASSKEY_ACTION_URL = "' . $actionUrl . '";</script>
@@ -347,7 +371,7 @@ document.addEventListener(\'DOMContentLoaded\', function() {
 });
 </script>');
                 $modeDescription .= '</textarea>';
-                $modeDescription .= '<p style="margin-top:10px;"><small style="color:#666;"><strong>提示：</strong>点击文本框自动全选，按 Ctrl+C 复制代码。代码已包含版本号 ?v=' . $version . '，更新插件后会自动使用新资源，无需修改代码。</small></p>';
+                $modeDescription .= '<p style="margin-top:10px;"><small class="pk-text-muted"><strong>提示：</strong>点击文本框自动全选，按 Ctrl+C 复制代码。代码已包含版本号 ?v=' . $version . '，更新插件后会自动使用新资源，无需修改代码。</small></p>';
                 $modeDescription .= '</div>';
             }
         }
@@ -389,19 +413,19 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         $globalAllowRegister = $options->allowRegister ? true : false;
         
         $registerDescription = '启用后，未登录用户可以在登录页面使用 Passkey 创建新账户（无需输入用户名密码）。';
-        $registerDescription .= '<br><br><div style="background:#fff3cd;padding:10px;margin-top:8px;border-left:3px solid #ffc107;">';
+        $registerDescription .= '<br><br><div class="pk-info-box--yellow" style="padding:10px;margin-top:8px;">';
         $registerDescription .= '<strong>重要：</strong>此设置受 Typecho 全局注册设置控制。<br>';
         
         if ($globalAllowRegister) {
-            $registerDescription .= '<span style="color:#155724;">√ 全局注册已开启</span>，此选项才能生效。<br>';
+            $registerDescription .= '<span class="pk-text-success">√ 全局注册已开启</span>，此选项才能生效。<br>';
         } else {
-            $registerDescription .= '<span style="color:#721c24;">× 全局注册已关闭</span>，即使此处启用也无法注册。<br>';
+            $registerDescription .= '<span class="pk-text-danger">× 全局注册已关闭</span>，即使此处启用也无法注册。<br>';
             $registerDescription .= '请先到 <strong>设置 → 基本 → 允许注册</strong> 中开启全局注册功能。';
         }
         
         $registerDescription .= '</div>';
         $registerDescription .= '<br><strong>注册流程说明：</strong><br>';
-        $registerDescription .= '<ol style="margin:5px 0;padding-left:20px;color:#555;line-height:1.6;">';
+        $registerDescription .= '<ol style="margin:5px 0;padding-left:20px;line-height:1.6;" class="pk-text-dim">';
         $registerDescription .= '<li>用户在登录页点击"使用 Passkey 登录"</li>';
         $registerDescription .= '<li>系统检测到该设备尚无凭证，提示是否创建新账户</li>';
         $registerDescription .= '<li>用户确认后，填写注册信息（用户名、邮箱、昵称）</li>';
@@ -423,15 +447,15 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         
         // 卸载时删除数据库选项
         $removeDataDescription = '选择在禁用插件时是否删除数据库中的所有 Passkey 数据。';
-        $removeDataDescription .= '<br><br><div style="background:#fff3cd;padding:10px;margin-top:8px;border-left:3px solid #ffc107;">';
-        $removeDataDescription .= '<strong>警告：</strong>如果选择“删除”，禁用插件时将永久删除以下数据：<br>';
-        $removeDataDescription .= '<ul style="margin:5px 0;padding-left:20px;color:#721c24;line-height:1.6;">';
+        $removeDataDescription .= '<br><br><div class="pk-info-box--yellow" style="padding:10px;margin-top:8px;">';
+        $removeDataDescription .= '<strong>警告：</strong>如果选择"删除"，禁用插件时将永久删除以下数据：<br>';
+        $removeDataDescription .= '<ul style="margin:5px 0;padding-left:20px;line-height:1.6;" class="pk-text-danger">';
         $removeDataDescription .= '<li>所有用户的 Passkey 凭证</li>';
         $removeDataDescription .= '<li>所有 Passkey 登录日志</li>';
         $removeDataDescription .= '</ul>';
         $removeDataDescription .= '<strong>此操作不可恢复！</strong>请谨慎选择。';
         $removeDataDescription .= '</div>';
-        $removeDataDescription .= '<br><strong>建议：</strong>如果您只是临时禁用插件，选择“保留”，以便之后重新启用时恢复数据。';
+        $removeDataDescription .= '<br><strong>建议：</strong>如果您只是临时禁用插件，选择"保留"，以便之后重新启用时恢复数据。';
         
         $removeDataOnUninstall = new Radio(
             'removeDataOnUninstall',
@@ -509,6 +533,21 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             .security-custom-params .param-group { margin: 10px 0; }
             .security-custom-params label { display: inline-block; min-width: 250px; color: #374151; font-size: 13px; }
             .security-custom-params input { padding: 6px 10px; border: 1px solid #d1d5db; width: 150px; font-size: 13px; }
+            .security-custom-desc { color: #6b7280; }
+            @media (prefers-color-scheme: dark) {
+                .security-mode-info { background: #1e1e1e; border-left-color: #5a8fa8; }
+                .security-mode-info h4 { color: #e5e5e5; }
+                .security-mode-info p { color: #9ca3af; }
+                .security-mode-info ul { color: #9ca3af; }
+                .security-mode-detail { background: #252525; }
+                .security-param-tooltip { background: #374151; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+                .security-reset-btn { background: #3a6378; }
+                .security-reset-btn:hover { background: #2d5060; }
+                .security-custom-params { background: #1e1e1e; border-color: #333; }
+                .security-custom-params label { color: #d1d5db; }
+                .security-custom-params input { border-color: #444; background: #2a2a2a; color: #e5e5e5; }
+                .security-custom-desc { color: #9ca3af; }
+            }
         </style>
         
         <div class="security-mode-info">
@@ -716,9 +755,9 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         // 高级自定义参数
         $advancedParamsHtml = '<div class="security-custom-params">
             <h4>高级自定义参数</h4>
-            <p style="color:#6b7280;font-size:13px;margin-bottom:15px;">
+            <p class="security-custom-desc" style="font-size:13px;margin-bottom:15px;">
                 以下参数会根据所选安全模式自动设置。如需自定义，请修改下方数值后保存。
-                <span style="color:#dc2626;">修改这些参数可能影响系统安全性，请谨慎操作！</span>
+                <span class="pk-warn-danger">修改这些参数可能影响系统安全性，请谨慎操作！</span>
             </p>';
         
         // 为每个参数添加说明图标
@@ -839,12 +878,9 @@ document.addEventListener(\'DOMContentLoaded\', function() {
     }
     
     /**
-     * 个人用户的配置面板
+     * 个人用户的配置面板（空实现）
      */
-    public static function personalConfig(Form $form)
-    {
-        // 个人配置项（如果需要）
-    }
+    public static function personalConfig(Form $form) {}
     
     /**
      * 在后台头部注入资源
@@ -911,19 +947,24 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         ?>
         <!-- Passkey 自动注入 -->
         <link rel="stylesheet" href="<?php echo $pluginUrl; ?>/assist/css/style.css?v=<?php echo $version; ?>">
+        <style>
+        .pk-login-divider { border-top: 1px solid #e5e7eb; }
+        .pk-login-divider-text { color: #9ca3af; }
+        @media (prefers-color-scheme: dark) {
+            .pk-login-divider { border-top-color: #333; }
+            .pk-login-divider-text { color: #6b7280; }
+        }
+        </style>
         <script>var PASSKEY_ACTION_URL = "<?php echo $options->index; ?>/action/passkey";</script>
         <script src="<?php echo $pluginUrl; ?>/assist/js/passkey.js?v=<?php echo $version; ?>"></script>
         <script>
         // 标记为自动注入模式，防止 passkey.js 重复注入
         window.PASSKEY_AUTO_INJECTED = true;
         </script>
-        <div id="passkey-login-container" style="margin-top:15px;padding-top:15px;border-top:1px solid #e5e7eb;">
-            <div style="text-align:center;margin-bottom:12px;color:#9ca3af;font-size:13px;">
-                或使用 Passkey 登录
-            </div>
+        <div id="passkey-login-container" class="pk-login-divider" style="margin-top:15px;padding-top:15px;">
             <button type="button" id="passkey-login-btn" class="btn btn-l w-100" 
                 style="width:100%;padding:10px;font-size:14px;cursor:pointer;background:#4f46e5;color:white;border:1px solid #4338ca;transition:all 0.2s ease;">
-                🔐 使用 Passkey 登录
+                使用 Passkey 登录
             </button>
         </div>
         <script>
