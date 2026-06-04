@@ -335,6 +335,31 @@ class Action extends Widget implements ActionInterface
             $_SESSION['passkey_register_screenname'] = $displayName;
         }
         
+        // 根据安全模式和认证器类型设置构建认证器选择策略
+        // 严格模式：无论用户设置如何，强制仅允许平台验证器（如 Windows Hello、Touch ID）
+        // 常规/开发模式：尊重"认证器类型限制"设置，默认允许所有类型验证器（包括 Bitwarden 等）
+        $securityMode = ($plugin && isset($plugin->securityMode)) ? $plugin->securityMode : 'normal';
+        $platformOnly = ($plugin && isset($plugin->platformOnly) && $plugin->platformOnly == '1') ? true : false;
+        
+        if ($securityMode === 'strict' || $platformOnly) {
+            // 严格模式或用户明确选择了"仅平台验证器"：仅接受平台内置认证器
+            // 提供最高级别的硬件绑定安全保证，但无法使用 Bitwarden 等第三方验证器
+            $authenticatorSelection = array(
+                'authenticatorAttachment' => 'platform',
+                'requireResidentKey' => false,
+                'userVerification' => 'preferred'
+            );
+        } else {
+            // 常规模式和开发模式（且未启用平台限制）：允许跨平台验证器
+            // 支持 Bitwarden、1Password、YubiKey 等第三方密码管理器的 Passkey 功能
+            // 使用 discoverable credential（resident key）确保凭证可在设备间同步恢复
+            $authenticatorSelection = array(
+                'residentKey' => 'required',
+                'requireResidentKey' => true,
+                'userVerification' => 'required'
+            );
+        }
+        
         $publicKey = array(
             'challenge' => $challenge,
             'rp' => array(
@@ -352,11 +377,7 @@ class Action extends Widget implements ActionInterface
             ),
             'timeout' => 60000,
             'attestation' => 'none',
-            'authenticatorSelection' => array(
-                'authenticatorAttachment' => 'platform',
-                'requireResidentKey' => false,
-                'userVerification' => 'preferred'
-            )
+            'authenticatorSelection' => $authenticatorSelection
         );
         
         $this->success($publicKey);
@@ -711,7 +732,7 @@ class Action extends Widget implements ActionInterface
             'challenge' => $challenge,
             'timeout' => 60000,
             'rpId' => $rpId,
-            'userVerification' => 'preferred'
+            'userVerification' => 'required'
         );
         
         $this->success($publicKey);

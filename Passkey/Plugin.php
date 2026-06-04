@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author GARFIELDTOM
- * @version 1.1.0
+ * @version 1.1.1
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.1.0';
+    const VERSION = '1.1.1';
     /**
      * 激活插件方法
      */
@@ -469,6 +469,34 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         );
         $form->addInput($removeDataOnUninstall);
         
+        // 认证器类型限制配置
+        // 控制是否仅允许平台内置验证器（如 Windows Hello、Touch ID）
+        // 关闭此选项可支持 Bitwarden、1Password、YubiKey 等第三方跨平台验证器
+        $authenticatorDescription = '选择注册 Passkey 时允许使用的认证器类型。<br><br>';
+        $authenticatorDescription .= '<div class="pk-info-box--blue" style="padding:10px;margin-top:8px;">';
+        $authenticatorDescription .= '<strong>说明：</strong><br>';
+        $authenticatorDescription .= '<ul style="margin:5px 0;padding-left:20px;line-height:1.6;" class="pk-text-dim">';
+        $authenticatorDescription .= '<li><strong>仅限平台验证器</strong>：只允许设备内置认证器（Windows Hello、Touch ID、Face ID），安全性最高</li>';
+        $authenticatorDescription .= '<li><strong>允许所有验证器</strong>：同时支持第三方密码管理器的 Passkey 功能（Bitwarden、1Password 等）</li>';
+        $authenticatorDescription .= '</ul>';
+        $authenticatorDescription .= '<p style="margin-top:8px;" class="pk-text-muted"><strong>注意：</strong>在<strong>严格模式</strong>下，无论此处如何设置都将强制使用"仅平台验证器"。</p>';
+        $authenticatorDescription .= '</div>';
+        
+        // 获取当前认证器设置（默认为允许所有验证器，即不限制平台）
+        $currentAuthMode = ($plugin && isset($plugin->platformOnly)) ? $plugin->platformOnly : '0';
+        
+        $platformOnly = new Radio(
+            'platformOnly',
+            array(
+                '0' => '允许所有验证器（推荐）',
+                '1' => '仅允许平台验证器'
+            ),
+            $currentAuthMode,
+            '认证器类型限制',
+            $authenticatorDescription
+        );
+        $form->addInput($platformOnly);
+        
         // 安全模式配置
         self::addSecurityConfig($form, $plugin);
     }
@@ -502,9 +530,9 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                     break;
                 }
             }
-            // 如果没有匹配到任何预设，但有存储的模式，说明是自定义参数
+            // 如果没有匹配到任何预设，但有存储的模式或参数被修改过，说明是自定义模式
             if (!$currentMode && $storedMode) {
-                $currentMode = ''; // 不选中任何模式
+                $currentMode = 'custom';  // 自定义模式：参数不匹配任何预设
             }
         }
         
@@ -560,6 +588,7 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                     <li>适用于开发和测试环境</li>
                     <li>较宽松的限制，便于调试</li>
                     <li>允许更长的数据长度和更多的尝试次数</li>
+                    <li><strong>认证器</strong>：受"认证器类型限制"设置控制（非严格模式下可自由选择）</li>
                     <li><strong style="color:#dc2626;">不建议在生产环境使用</strong></li>
                 </ul>
             </div>
@@ -570,6 +599,7 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                     <li>适用于大多数生产环境</li>
                     <li>平衡安全性和兼容性</li>
                     <li>符合 WebAuthn 标准的推荐配置</li>
+                    <li><strong>认证器</strong>：受"认证器类型限制"设置控制（非严格模式下可自由选择）</li>
                     <li><strong>默认推荐配置</strong></li>
                 </ul>
             </div>
@@ -580,7 +610,18 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                     <li>适用于高安全要求的环境</li>
                     <li>最严格的安全限制</li>
                     <li>更短的超时时间和更少的尝试次数</li>
-                    <li>可能影响用户体验</li>
+                    <li><strong>认证器</strong>：强制仅允许平台验证器（Windows Hello、Touch ID 等），忽略"认证器类型限制"设置</li>
+                    <li>可能影响用户体验（无法使用 Bitwarden 等第三方验证器）</li>
+                </ul>
+            </div>
+            
+            <div class="security-mode-detail" id="security-mode-custom">
+                <strong style="color:#8b5cf6;">自定义模式</strong>
+                <ul>
+                    <li>当您手动修改了高级参数后自动进入此模式</li>
+                    <li>参数不再跟随任何预设，完全由您自行控制</li>
+                    <li><strong>认证器</strong>：受"认证器类型限制"设置控制（非严格模式下可自由选择）</li>
+                    <li>可通过选择预设模式或点击"重置为预设参数"返回预设配置</li>
                 </ul>
             </div>
             
@@ -590,127 +631,705 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         </div>
         
         <script>
-        (function() {
-            // 切换模式说明
-            function updateSecurityModeDescription() {
-                var mode = document.querySelector(\'input[name="securityMode"]:checked\');
-                if (!mode) return;
-                
-                // 隐藏所有说明
-                document.querySelectorAll(\'.security-mode-detail\').forEach(function(el) {
-                    el.classList.remove(\'active\');
-                });
-                
-                // 显示当前模式的说明
-                var detail = document.getElementById(\'security-mode-\' + mode.value);
-                if (detail) {
-                    detail.classList.add(\'active\');
+        /**
+         * PasskeySettings - 插件设置面板统一管理器
+         * 
+         * 架构设计：
+         * - 命名空间：所有设置相关逻辑统一在 window.PasskeySettings 下
+         * - 事件驱动：通过事件系统实现模块间解耦，支持外部监听和扩展
+         * - 联动规则注册表：新增功能只需调用 registerLinkage() 注册规则，无需修改核心逻辑
+         * - 闭环同步：模式变更 → 联动执行 → 参数同步 → 预设校验 → 状态反馈（双向）
+         * - 生命周期钩子：提供 init / change / reset / param 各阶段钩子，便于扩展
+         *
+         * 扩展接口示例（未来新增设置项时使用）：
+         *   // 注册联动规则
+         *   PasskeySettings.registerLinkage({
+         *       mode: \'strict\',              // 触发模式（\'development\' / \'normal\' / \'strict\' / \'custom\' / \'*\' 全部）
+         *       priority: 10,                 // 执行优先级（数字越小越先执行，默认 100）
+         *       targets: [{
+         *           selector: \'input[name="newOption"]\',
+         *           action: \'forceValue\',    // 支持: disable | enable | forceValue | hide | show | callback
+         *           value: \'1\',             // forceValue 时强制设定的值
+         *           disabled: true,          // 是否禁用交互
+         *           overlayHtml: \'<span>提示文字</span>\',  // 禁用时显示的叠加提示
+         *           callback: function(el, ctx) { ... }  // 自定义处理函数
+         *       }]
+         *   });
+         *
+         *   // 监听事件
+         *   PasskeySettings.on(\'modeChange\', function(data) { console.log(data.mode, data.prevMode); });
+         *   PasskeySettings.on(\'paramChange\', function(data) { console.log(data.paramName, data.value); });
+         *   PasskeySettings.on(\'linkageApply\', function(data) { console.log(data.mode, data.rules); });
+         */
+        var PasskeySettings = (function() {
+            // ====== 内部状态 ======
+            var _presets = {};                    // 安全模式预设参数（由 PHP 注入）
+            var _linkageRules = [];               // 联动规则注册表
+            var _listeners = {};                  // 事件监听器字典
+            var _state = {
+                currentMode: null,                // 当前选中的安全模式标识
+                previousMode: null,               // 上一次的安全模式（用于变更检测）
+                isCustom: false                   // 当前是否处于自定义参数状态
+            };
+            
+            // ====== 事件系统 ======
+            /**
+             * 注册事件监听器
+             * @param {string} event - 事件名称（modeChange / paramChange / linkageApply / reset / init）
+             * @param {Function} callback - 回调函数，接收 data 参数
+             * @returns {PasskeySettings} 支持链式调用
+             */
+            function on(event, callback) {
+                if (!_listeners[event]) {
+                    _listeners[event] = [];
+                }
+                _listeners[event].push(callback);
+                return _public;
+            }
+            
+            /**
+             * 移除事件监听器
+             * @param {string} event - 事件名称
+             * @param {Function} callback - 要移除的回调引用（不传则清空该事件全部监听器）
+             */
+            function off(event, callback) {
+                if (!_listeners[event]) return;
+                if (!callback) {
+                    _listeners[event] = [];
+                } else {
+                    _listeners[event] = _listeners[event].filter(function(cb) { return cb !== callback; });
                 }
             }
             
-            // 页面加载时显示当前模式
-            document.addEventListener(\'DOMContentLoaded\', function() {
-                updateSecurityModeDescription();
+            /**
+             * 触发事件
+             * @param {string} event - 事件名称
+             * @param {Object} data - 传递给监听器的数据
+             */
+            function emit(event, data) {
+                if (!_listeners[event]) return;
+                _listeners[event].forEach(function(callback) {
+                    try {
+                        callback(data || {});
+                    } catch (e) {
+                        if (typeof console !== \'undefined\') {
+                            console.error(\'[PasskeySettings] Event "\' + event + \'" handler error:\', e);
+                        }
+                    }
+                });
+            }
+            
+            // ====== 联动规则引擎 ======
+            /**
+             * 注册联动规则
+             * 规则在安全模式切换时自动执行，用于控制非参数类设置的启用/禁用/强制值等行为
+             * 
+             * @param {Object} rule - 联动规则配置
+             *   @param {string} rule.mode - 触发的安全模式（\'development\' / \'normal\' / \'strict\' / \'*\' 全部）
+             *   @param {number} [rule.priority=100] - 执行优先级（越小越先执行）
+             *   @param {Array}  rule.targets - 目标操作列表
+             *     @param {string} target.selector - CSS 选择器定位目标元素
+             *     @param {string} target.action - 操作类型（disable / enable / forceValue / hide / show / callback）
+             *     @param {string} [target.value] - forceValue 操作的强制值
+             *     @param {boolean} [target.disabled] - 是否禁用目标元素
+             *     @param {string} [target.overlayHtml] - 禁用时在目标容器内追加的提示 HTML
+             *     @param {Function} [target.callback] - callback 操作的自定义函数(el, context)
+             * @returns {PasskeySettings} 支持链式调用
+             */
+            function registerLinkage(rule) {
+                // 参数校验与默认值填充
+                if (!rule || !rule.mode || !Array.isArray(rule.targets)) {
+                    if (typeof console !== \'undefined\') {
+                        console.warn(\'[PasskeySettings] Invalid linkage rule:\', rule);
+                    }
+                    return _public;
+                }
                 
-                // 监听模式切换
-                document.querySelectorAll(\'input[name="securityMode"]\').forEach(function(radio) {
-                    radio.addEventListener(\'change\', updateSecurityModeDescription);
+                rule.priority = typeof rule.priority === \'number\' ? rule.priority : 100;
+                rule.targets = rule.targets.map(function(target) {
+                    return {
+                        selector: target.selector || \'\',
+                        action: target.action || \'disable\',
+                        value: target.value,
+                        disabled: target.disabled !== undefined ? target.disabled : (target.action === \'disable\'),
+                        overlayHtml: target.overlayHtml || \'\',
+                        callback: typeof target.callback === \'function\' ? target.callback : null
+                    };
                 });
                 
-                // 初始化：将可见输入框的值同步到隐藏输入框
-                document.querySelectorAll(\'[data-sync-target]\').forEach(function(input) {
-                    syncParamValue(input);
+                _linkageRules.push(rule);
+                // 按优先级排序（小优先）
+                _linkageRules.sort(function(a, b) { return a.priority - b.priority; });
+                
+                return _public;
+            }
+            
+            /**
+             * 执行指定模式的联动规则
+             * 匹配逻辑：mode 严格匹配 或 rule.mode === \'*\'（通配符匹配所有模式）
+             * 
+             * @param {string} mode - 当前安全模式（\'development\' / \'normal\' / \'strict\' / \'custom\'）
+             * @param {boolean} isInit - 是否为初始化调用（init 时不清除之前的 overlay）
+             */
+            function applyLinkage(mode, isInit) {
+                var appliedRules = [];
+                
+                // ---- 前置清理：移除上一次联动遗留的 overlay 和禁用状态 ----
+                //    非初始化调用时，先清除所有联动产生的 overlay，避免切换模式后残留
+                //    例如：从 strict 切换到 normal 时，strict 的"已强制锁定"提示必须被移除
+                if (!isInit) {
+                    _cleanupAllOverlays();
+                }
+                
+                _linkageRules.forEach(function(rule) {
+                    // 匹配检查：严格匹配或通配符
+                    if (rule.mode !== mode && rule.mode !== \'*\') {
+                        return;
+                    }
                     
-                    // 监听参数变化，如果用户手动修改参数，取消模式选择
-                    input.addEventListener(\'input\', function() {
-                        checkAndClearModeSelection();
+                    appliedRules.push(rule);
+                    
+                    rule.targets.forEach(function(target) {
+                        var elements = document.querySelectorAll(target.selector);
+                        if (!elements.length) return;
+                        
+                        elements.forEach(function(el) {
+                            switch (target.action) {
+                                case \'disable\':
+                                    _applyDisableState(el, target, true);
+                                    break;
+                                case \'enable\':
+                                    _applyDisableState(el, target, false);
+                                    break;
+                                case \'forceValue\':
+                                    _applyForceValue(el, target);
+                                    break;
+                                case \'hide\':
+                                    el.style.display = \'none\';
+                                    break;
+                                case \'show\':
+                                    el.style.display = \'\';
+                                    break;
+                                case \'callback\':
+                                    if (target.callback) {
+                                        target.callback(el, { mode: mode, state: _state });
+                                    }
+                                    break;
+                            }
+                        });
+                        
+                        // 处理容器级 overlay（仅对有 overlayHtml 的首个目标元素处理）
+                        if (target.overlayHtml && elements.length > 0) {
+                            _handleOverlay(elements[0], target, target.action === \'disable\' || target.disabled);
+                        }
                     });
                 });
-            });
-            
-            // 如果DOM已加载，立即执行
-            if (document.readyState !== \'loading\') {
-                updateSecurityModeDescription();
+                
+                emit(\'linkageApply\', { mode: mode, rules: appliedRules, isInit: !!isInit });
             }
-        })();
-        
-        // 同步可见输入框的值到隐藏的表单字段
-        function syncParamValue(visibleInput) {
-            var targetName = visibleInput.getAttribute(\'data-sync-target\');
-            var hiddenInput = document.querySelector(\'input[name="\' + targetName + \'"]\');
-            if (hiddenInput) {
-                hiddenInput.value = visibleInput.value;
-            }
-        }
-        
-        // 检查当前参数是否匹配预设模式，如果不匹配则取消选择
-        function checkAndClearModeSelection() {
-            var presets = ' . json_encode($presets) . ';
-            var selectedMode = document.querySelector(\'input[name="securityMode"]:checked\');
             
-            if (!selectedMode) return;
-            
-            var currentParams = {};
-            document.querySelectorAll(\'[data-sync-target]\').forEach(function(input) {
-                var paramName = input.getAttribute(\'data-sync-target\');
-                currentParams[paramName] = parseInt(input.value) || input.value;
-            });
-            
-            // 检查当前参数是否匹配所选模式的预设
-            var presetParams = presets[selectedMode.value];
-            var isMatch = true;
-            
-            for (var key in presetParams) {
-                if (currentParams[key] != presetParams[key]) {
-                    isMatch = false;
-                    break;
+            /**
+             * 应用禁用/启用状态到单个元素
+             * @private
+             */
+            function _applyDisableState(el, target, disable) {
+                el.disabled = disable;
+                el.style.cursor = disable ? \'not-allowed\' : \'\';
+                el.style.opacity = disable ? \'0.6\' : \'\';
+                if (disable) {
+                    el.title = el.title || \'当前模式下此选项不可更改\';
+                } else {
+                    // 恢复可用时清除提示文字（由 _cleanupAllOverlays 在非初始化调用前统一清理）
+                    el.title = \'\';
                 }
             }
             
-            // 如果不匹配，取消选择
-            if (!isMatch) {
-                selectedMode.checked = false;
-                // 隐藏所有模式说明
+            /**
+             * 应用强制值到 Radio/Checkbox/Select 元素
+             * @private
+             */
+            function _applyForceValue(el, target) {
+                var tagName = (el.tagName || \'\').toLowerCase();
+                var type = (el.type || \'\').toLowerCase();
+                
+                if (tagName === \'input\' && (type === \'radio\' || type === \'checkbox\')) {
+                    // Radio/Checkbox：通过值匹配来选中
+                    if (String(el.value) === String(target.value)) {
+                        el.checked = true;
+                    } else {
+                        el.checked = false;
+                    }
+                    // 同步应用禁用状态
+                    if (target.disabled) {
+                        _applyDisableState(el, target, true);
+                    }
+                } else if (tagName === \'select\' || tagName === \'textarea\' || (tagName === \'input\' && (type === \'text\' || type === \'number\' || type === \'hidden\'))) {
+                    el.value = target.value;
+                    if (target.disabled) {
+                        _applyDisableState(el, target, true);
+                    }
+                }
+            }
+            
+            /**
+             * 夹具容器级 Overlay 提示
+             * 在目标元素的最近 .typecho-option 父容器上添加/移除提示层
+             * @private
+             */
+            function _handleOverlay(rootEl, target, shouldShow) {
+                var wrapper = rootEl.closest(\'.typecho-option\') || rootEl.parentElement;
+                if (!wrapper) return;
+                
+                var overlayClass = \'pk-linkage-overlay-\' + target.selector.replace(/[^a-zA-Z0-9_-]/g, \'-\');
+                var existingOverlay = wrapper.querySelector(\'.\' + overlayClass);
+                
+                if (shouldShow && target.overlayHtml) {
+                    // 标签样式联动
+                    var labels = wrapper.querySelectorAll(\'label\');
+                    labels.forEach(function(label) {
+                        label.style.cursor = \'not-allowed\';
+                        label.style.opacity = \'0.6\';
+                    });
+                    
+                    if (!existingOverlay) {
+                        var overlay = document.createElement(\'div\');
+                        overlay.className = overlayClass + \' pk-linkage-overlay\';
+                        overlay.innerHTML = target.overlayHtml;
+                        overlay.style.cssText = \'pointer-events:none;margin-top:6px;\';
+                        wrapper.appendChild(overlay);
+                    }
+                } else {
+                    // 恢复标签样式
+                    var labels = wrapper.querySelectorAll(\'label\');
+                    labels.forEach(function(label) {
+                        label.style.cursor = \'\';
+                        label.style.opacity = \'\';
+                    });
+                    
+                    if (existingOverlay) {
+                        existingOverlay.remove();
+                    }
+                }
+            }
+            
+            /**
+             * 清理所有联动规则产生的 Overlay 和禁用状态
+             * 在切换模式时调用，确保上一次联动的视觉效果被完全清除
+             * 
+             * 清理范围：
+             * - 所有 .pk-linkage-overlay 元素（联动提示层）
+             * - 被联动禁用的元素的 disabled / cursor / opacity / title 状态
+             * - 被联动影响的 label 样式
+             * @private
+             */
+            function _cleanupAllOverlays() {
+                // 1. 移除所有联动 overlay 提示层
+                document.querySelectorAll(\'.pk-linkage-overlay\').forEach(function(el) {
+                    el.remove();
+                });
+                
+                // 2. 恢复所有被联动控制的元素状态
+                //    遍历所有已注册规则的 target 选择器，恢复匹配元素的默认样式
+                _linkageRules.forEach(function(rule) {
+                    rule.targets.forEach(function(target) {
+                        if (!target.selector) return;
+                        var elements = document.querySelectorAll(target.selector);
+                        elements.forEach(function(el) {
+                            el.disabled = false;
+                            el.style.cursor = \'\';
+                            el.style.opacity = \'\';
+                        });
+                        
+                        // 恢复关联容器的 label 样式
+                        if (elements.length > 0) {
+                            var wrapper = elements[0].closest(\'.typecho-option\') || elements[0].parentElement;
+                            if (wrapper) {
+                                wrapper.querySelectorAll(\'label\').forEach(function(label) {
+                                    label.style.cursor = \'\';
+                                    label.style.opacity = \'\';
+                                });
+                            }
+                        }
+                    });
+                });
+            }
+            
+            // ====== 模式管理 ======
+            /**
+             * 获取当前选中的安全模式
+             * @returns {string} 模式标识（始终有值，无选中时返回 \'custom\'）
+             */
+            function getMode() {
+                var checked = document.querySelector(\'input[name="securityMode"]:checked\');
+                return checked ? checked.value : \'custom\';
+            }
+            
+            /**
+             * 切换安全模式（完整闭环流程）
+             * 流程：记录旧模式 → 更新 UI 说明 → 同步预设参数（仅预设模式）→ 执行联动规则 → 触发事件
+             * 
+             * @param {string} mode - 目标模式（\'development\' / \'normal\' / \'strict\' / \'custom\'）
+             */
+            function setMode(mode) {
+                var prevMode = _state.currentMode;
+                
+                // 触发前置钩子（可拦截）
+                emit(\'beforeModeChange\', { mode: mode, prevMode: prevMode, state: _state });
+                
+                // 更新内部状态
+                _state.previousMode = prevMode;
+                _state.currentMode = mode;
+                _state.isCustom = (mode === \'custom\');
+                
+                // 1. 切换模式说明面板的显隐
+                _updateModeDetail(mode);
+                
+                // 2. 如果是预设模式（非 custom），自动将所有参数同步为该模式的预设值
+                //    自定义模式保留用户当前修改的参数，不做覆盖
+                if (mode !== \'custom\' && _presets[mode]) {
+                    _applyPresetParams(mode);
+                }
+                
+                // 3. 执行联动规则（控制 platformOnly 等非参数选项 + 刷新验证器状态）
+                //    无论哪种模式都执行联动，确保验证器状态与当前模式一致
+                applyLinkage(mode);
+                
+                // 4. 触发后置事件
+                emit(\'modeChange\', { mode: mode, prevMode: prevMode, state: _state });
+            }
+            
+            /**
+             * 更新模式说明面板的 active 状态
+             * @private
+             */
+            function _updateModeDetail(mode) {
+                // 先隐藏所有说明面板
                 document.querySelectorAll(\'.security-mode-detail\').forEach(function(el) {
                     el.classList.remove(\'active\');
                 });
-            }
-        }
-        function resetSecurityParams() {
-            var mode = document.querySelector(\'input[name="securityMode"]:checked\');
-            if (!mode) {
-                alert(\'请先选择安全模式\');
-                return;
-            }
-            
-            var presets = ' . json_encode($presets) . ';
-            var params = presets[mode.value];
-            
-            if (!params) {
-                alert(\'无法获取预设参数\');
-                return;
+                
+                // 再显示当前模式对应的面板
+                if (mode) {
+                    var detail = document.getElementById(\'security-mode-\' + mode);
+                    if (detail) {
+                        detail.classList.add(\'active\');
+                    }
+                }
             }
             
-            // 更新可见输入框和隐藏输入框的值
-            Object.keys(params).forEach(function(key) {
-                // 更新可见输入框
-                var visibleInput = document.querySelector(\'#visible-\' + key);
-                if (visibleInput) {
-                    visibleInput.value = params[key];
-                    syncParamValue(visibleInput);
+            // ====== 参数同步 ======
+            /**
+             * 将指定模式的所有预设参数应用到可见输入框和隐藏表单字段
+             * 此方法是 setMode（切换模式自动应用）和 resetToPreset（手动重置）的共同底层实现
+             * 
+             * @param {string} mode - 要应用预设参数的安全模式标识
+             * @private
+             */
+            function _applyPresetParams(mode) {
+                var params = _presets[mode];
+                if (!params) return;
+                
+                Object.keys(params).forEach(function(key) {
+                    var value = params[key];
+                    
+                    // 更新可见输入框
+                    var visibleInput = document.querySelector(\'#visible-\' + key);
+                    if (visibleInput) {
+                        visibleInput.value = value;
+                        syncParam(visibleInput);  // 同步到隐藏框 + 触发 paramChange 事件
+                    }
+                    
+                    // 直接更新隐藏输入框（兜底，确保即使无可见框也能正确提交）
+                    var hiddenInput = document.querySelector(\'input[name="\' + key + \'"]\');
+                    if (hiddenInput) {
+                        hiddenInput.value = value;
+                    }
+                });
+            }
+            
+            /**
+             * 将可见输入框的值同步到隐藏的表单提交字段
+             * 同时触发 paramChange 事件供外部监听
+             * 
+             * @param {HTMLElement} visibleInput - 带有 data-sync-target 属性的可见输入框
+             */
+            function syncParam(visibleInput) {
+                var targetName = visibleInput.getAttribute(\'data-sync-target\');
+                if (!targetName) return;
+                
+                var hiddenInput = document.querySelector(\'input[name="\' + targetName + \'"]\');
+                if (hiddenInput) {
+                    hiddenInput.value = visibleInput.value;
                 }
                 
-                // 直接更新隐藏输入框（双重保险）
-                var hiddenInput = document.querySelector(\'input[name="\' + key + \'"]\');
-                if (hiddenInput) {
-                    hiddenInput.value = params[key];
-                }
-            });
+                emit(\'paramChange\', {
+                    paramName: targetName,
+                    value: visibleInput.value,
+                    element: visibleInput
+                });
+            }
             
-            alert(\'已重置为 \' + mode.value + \' 模式的预设参数\');
-        }
+            /**
+             * 校验当前参数是否仍匹配选中的预设模式
+             * 若不匹配则自动切换到自定义模式、隐藏原说明面板、重新执行联动（恢复非限制态）
+             * 这是闭环的关键环节：参数改动 → 反向影响模式选择
+             */
+            function checkPresetMatch() {
+                var selectedMode = getMode();
+                // 自定义模式下无需校验
+                if (selectedMode === \'custom\' || !_presets[selectedMode]) return;
+                
+                // 收集当前所有参数值
+                var currentParams = {};
+                document.querySelectorAll(\'[data-sync-target]\').forEach(function(input) {
+                    var paramName = input.getAttribute(\'data-sync-target\');
+                    currentParams[paramName] = parseInt(input.value) || input.value;
+                });
+                
+                // 与预设值逐一比对
+                var presetParams = _presets[selectedMode];
+                var isMatch = true;
+                for (var key in presetParams) {
+                    if (currentParams[key] != presetParams[key]) {
+                        isMatch = false;
+                        break;
+                    }
+                }
+                
+                if (!isMatch) {
+                    // 不匹配：切换到"自定义模式"（选中 custom 单选框，而非取消选择导致空值）
+                    var customRadio = document.querySelector(\'input[name="securityMode"][value="custom"]\');
+                    if (customRadio) {
+                        customRadio.checked = true;
+                    }
+                    
+                    // 以 custom 模式执行联动（恢复所有限制项为可用状态）
+                    setMode(\'custom\');
+                    
+                    emit(\'presetMismatch\', { expectedMode: selectedMode, currentParams: currentParams });
+                }
+                
+                return isMatch;
+            }
+            
+            // ====== 重置功能 ======
+            /**
+             * 重置当前模式的所有参数为预设值
+             * 完整流程：验证模式存在 → 调用 _applyPresetParams → 重新执行联动 → 触发事件
+             * 
+             * @returns {boolean} 是否成功重置
+             */
+            function resetToPreset() {
+                var mode = getMode();
+                if (!mode) {
+                    alert(\'请先选择一个安全模式。\');
+                    return false;
+                }
+                
+                if (!_presets[mode]) {
+                    alert(\'不支持 " \' + mode + \' " 模式的预设参数。\');
+                    return false;
+                }
+                
+                emit(\'beforeReset\', { mode: mode });
+                
+                // 复用预设参数应用逻辑（与 setMode 切换模式时使用同一方法）
+                _applyPresetParams(mode);
+                
+                // 重置后重新执行联动（确保 strict 模式下 platformOnly 等也被正确锁定）
+                applyLinkage(mode);
+                
+                emit(\'afterReset\', { mode: mode, params: _presets[mode] });
+                
+                alert(\'已重置为 " \' + mode + \' " 模式的预设参数。\');
+                return true;
+            }
+            
+            // ====== 初始化 ======
+            /**
+             * 初始化设置管理器
+             * 绑定所有 DOM 事件监听器，加载初始状态，执行首次联动
+             * 
+             * @param {Object} presets - PHP 注入的安全模式预设参数对象
+             */
+            function init(presets) {
+                _presets = presets || {};
+                
+                // 注册内置联动规则（插件核心功能的联动定义集中在此处）
+                _registerBuiltInLinkages();
+                
+                // 获取初始模式（无选中时默认为 custom，下面会做兜底处理）
+                var initialMode = getMode();
+                
+                // ---- 安全模式兜底：确保始终有选中项 ----
+                //    如果没有任何 radio 被选中（如旧配置迁移、数据异常等情况），
+                //    自动选中推荐选项"常规模式"，避免出现空选状态
+                if (!document.querySelector(\'input[name="securityMode"]:checked\')) {
+                    var defaultRadio = document.querySelector(\'input[name="securityMode"][value="normal"]\');
+                    if (defaultRadio) {
+                        defaultRadio.checked = true;
+                        initialMode = \'normal\';
+                    }
+                }
+                
+                _state.currentMode = initialMode;
+                _state.isCustom = (initialMode === \'custom\');
+                
+                // 首次联动（带 isInit 标记，保留已有的 overlay 不重复创建）
+                _updateModeDetail(initialMode);
+                applyLinkage(initialMode, true);
+                
+                // ---- 事件绑定 ----
+                
+                // 安全模式 Radio 切换 → 触发完整的 setMode 闭环
+                document.querySelectorAll(\'input[name="securityMode"]\').forEach(function(radio) {
+                    radio.addEventListener(\'change\', function() {
+                        setMode(this.value);
+                    });
+                });
+                
+                // 可见参数输入框变化 → 同步到隐藏框 + 校验预设匹配
+                document.querySelectorAll(\'[data-sync-target]\').forEach(function(input) {
+                    // 初始同步
+                    syncParam(input);
+                    
+                    // 输入变化时同步 + 校验
+                    input.addEventListener(\'input\', function() {
+                        syncParam(this);
+                        checkPresetMatch();
+                    });
+                    
+                    // 失去焦点时也校验（捕获粘贴等场景）
+                    input.addEventListener(\'change\', function() {
+                        syncParam(this);
+                        checkPresetMatch();
+                    });
+                });
+                
+                // 认证器类型限制（platformOnly）变化时也需校验是否偏离预设模式
+                document.querySelectorAll(\'input[name="platformOnly"]\').forEach(function(radio) {
+                    radio.addEventListener(\'change\', function() {
+                        // 仅在非严格模式下才响应变化（严格模式下被禁用不应触发）
+                        if (!this.disabled) {
+                            emit(\'platformOnlyChange\', { value: this.value });
+                            // platformOnly 变化也可能导致偏离预设（如果预设隐含了特定认证器要求）
+                            // 这里暂不做强制清除模式，因为 platformOnly 不是预设参数的一部分
+                            // 但可以通过事件让外部代码自行决定是否需要 clearMode
+                        }
+                    });
+                });
+                
+                emit(\'init\', { mode: initialMode, state: _state, presetsCount: Object.keys(_presets).length });
+            }
+            
+            /**
+             * 注册内置联动规则
+             * 所有插件原生的联动逻辑集中定义于此
+             * 未来新增联动只需在此方法中添加新的 registerLinkage 调用即可
+             * @private
+             */
+            function _registerBuiltInLinkages() {
+                // ---- 规则 1：严格模式 → 强制锁定"认证器类型限制"为"仅平台验证器" ----
+                registerLinkage({
+                    mode: \'strict\',
+                    priority: 10,               // 高优先级，最先执行
+                    targets: [{
+                        selector: \'input[name="platformOnly"]\',
+                        action: \'forceValue\',
+                        value: \'1\',             // 强制选中"仅允许平台验证器"
+                        disabled: true,          // 禁止用户修改
+                        overlayHtml: \'<span style="color:#dc2626;font-size:12px;display:inline-flex;align-items:center;gap:4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> 严格模式下已强制锁定为"仅平台验证器"</span>\'
+                    }]
+                });
+                
+                // ---- 规则 2：自定义模式 → 恢复"认证器类型限制"为可用状态 ----
+                //    当用户手动修改参数进入自定义模式，或从严格模式切换到自定义模式时，
+                //    确保 platformOnly 选项恢复可用（由 _cleanupAllOverlays 配合完成清理）
+                //    此规则显式声明 custom 模式下 platformOnly 的行为：启用且不强制值
+                registerLinkage({
+                    mode: \'custom\',
+                    priority: 20,
+                    targets: [{
+                        selector: \'input[name="platformOnly"]\',
+                        action: \'enable\'           // 恢复为可交互状态，保留用户之前的选择
+                    }]
+                });
+                
+                // ---- 规则 3（预留）：开发模式下的特殊联动 ----
+                // 示例：如果将来开发模式下需要自动开启某些调试选项，可以在这里添加：
+                //
+                // registerLinkage({
+                //     mode: \'development\',
+                //     priority: 20,
+                //     targets: [{
+                //         selector: \'input[name="debugMode"]\',
+                //         action: \'forceValue\',
+                //         value: \'1\'
+                //     }]
+                // });
+                //
+                // ---- 规则 N（预留）：通配符规则对所有模式生效 ----
+                // 示例：如果某个选项需要在任何模式下都根据条件联动：
+                //
+                // registerLinkage({
+                //     mode: \'*\',
+                //     priority: 999,
+                //     targets: [{
+                //         selector: \'some-selector\',
+                //         action: \'callback\',
+                //         callback: function(el, ctx) {
+                //             // 自定义联动逻辑
+                //         }
+                //     }]
+                // });
+            }
+            
+            // ====== 公开 API ======
+            var _public = {
+                // 核心
+                init: init,
+                getMode: getMode,
+                setMode: setMode,
+                
+                // 联动系统
+                registerLinkage: registerLinkage,
+                applyLinkage: applyLinkage,
+                
+                // 参数管理
+                syncParam: syncParam,
+                checkPresetMatch: checkPresetMatch,
+                resetToPreset: resetToPreset,
+                
+                // 事件系统
+                on: on,
+                off: off,
+                emit: emit,
+                
+                // 状态只读访问
+                getState: function() { return Object.assign({}, _state); },
+                getPresets: function() { return Object.assign({}, _presets); },
+                getLinkageRules: function() { return _linkageRules.slice(); }
+            };
+            
+            return _public;
+        })();
         
-        // 参数说明提示
+        // ====== 向后兼容的全局函数 ======
+        // 保留原有全局函数名作为 PasskeySettings 的代理，确保 HTML 中 onclick 等内联调用不受影响
+        
+        /** @deprecated 使用 Passkey.syncParam() 替代 */
+        function syncParamValue(visibleInput) { return PasskeySettings.syncParam(visibleInput); }
+        
+        /** @deprecated 使用 Passkey.checkPresetMatch() 替代 */
+        function checkAndClearModeSelection() { return PasskeySettings.checkPresetMatch(); }
+        
+        /** @deprecated 使用 Passkey.resetToPreset() 替代 */
+        function resetSecurityParams() { return PasskeySettings.resetToPreset(); }
+        
+        /**
+         * 参数说明 Tooltip（独立工具函数，保持全局可用）
+         * 此函数与设置联动无关，属于纯 UI 辅助功能
+         */
         function showParamInfo(event, paramName) {
             event.preventDefault();
             event.stopPropagation();
@@ -736,9 +1355,8 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                 tooltip.className = \'security-param-tooltip\';
                 document.body.appendChild(tooltip);
                 
-                // 创建全局点击监听器（只创建一次）
+                // 全局点击关闭 Tooltip（仅绑定一次）
                 document.addEventListener(\'click\', function(e) {
-                    // 如果点击的不是 info 图标，则隐藏 tooltip
                     if (!e.target.closest(\'.security-param-info\')) {
                         tooltip.className = \'security-param-tooltip\';
                     }
@@ -750,6 +1368,20 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             tooltip.style.left = (event.pageX + 10) + \'px\';
             tooltip.style.top = (event.pageY + 10) + \'px\';
         }
+        
+        // ====== 启动初始化 ======
+        (function() {
+            // DOMReady 后初始化（兼容动态加载场景）
+            var initFn = function() {
+                PasskeySettings.init(' . json_encode($presets) . ');
+            };
+            
+            if (document.readyState === \'loading\') {
+                document.addEventListener(\'DOMContentLoaded\', initFn);
+            } else {
+                initFn();
+            }
+        })();
         </script>';
         
         // 高级自定义参数
@@ -782,8 +1414,9 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             'securityMode',
             array(
                 'development' => '开发模式（Development）',
-                'normal' => '常规模式（Normal）',
-                'strict' => '严格模式（Strict）'
+                'normal' => '常规模式（Normal，推荐）',
+                'strict' => '严格模式（Strict）',
+                'custom' => '自定义模式（Custom）'
             ),
             $currentMode,
             '安全模式',
