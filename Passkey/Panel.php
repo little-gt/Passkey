@@ -23,7 +23,7 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.1.1'; // 与 Plugin.php 中的版本号保持一致
+$pluginVersion = '1.1.2'; // 与 Plugin.php 中的版本号保持一致
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -65,30 +65,30 @@ $pluginVersion = '1.1.1'; // 与 Plugin.php 中的版本号保持一致
 
         @media (prefers-color-scheme: dark) {
             :root {
-                --bg-primary: #0d1117;
-                --bg-secondary: #161b22;
-                --bg-tertiary: #21262d;
-                --bg-hover: #21262d;
-                --text-primary: #e6edf3;
-                --text-secondary: #c9d1d9;
-                --text-tertiary: #8b949e;
-                --text-quaternary: #6e7681;
-                --border-color: #30363d;
-                --primary-color: #58a6ff;
-                --primary-hover: #79b8ff;
-                --primary-active: #a5d6ff;
-                --danger-color: #f85149;
-                --success-bg: rgba(46, 160, 67, 0.1);
-                --success-border: #2ea043;
-                --success-text: #3fb950;
-                --error-bg: rgba(248, 81, 73, 0.1);
-                --error-border: #f85149;
-                --error-text: #f85149;
-                --info-bg: rgba(88, 166, 255, 0.1);
-                --info-border: #58a6ff;
-                --info-text: #58a6ff;
-                --notification-bg: #1c2128;
-                --modal-bg: #161b22;
+                --bg-primary: #000000;
+                --bg-secondary: #0a0a0a;
+                --bg-tertiary: #111111;
+                --bg-hover: #1a1a1a;
+                --text-primary: #d4d4d4;
+                --text-secondary: #a3a3a3;
+                --text-tertiary: #737373;
+                --text-quaternary: #525252;
+                --border-color: #262626;
+                --primary-color: #60a5fa;
+                --primary-hover: #93bbfd;
+                --primary-active: #bfdbfe;
+                --danger-color: #f87171;
+                --success-bg: rgba(34, 197, 94, 0.08);
+                --success-border: #22c55e;
+                --success-text: #4ade80;
+                --error-bg: rgba(248, 113, 113, 0.08);
+                --error-border: #f87171;
+                --error-text: #fca5a5;
+                --info-bg: rgba(96, 165, 250, 0.08);
+                --info-border: #60a5fa;
+                --info-text: #93bbfd;
+                --notification-bg: #0a0a0a;
+                --modal-bg: #0a0a0a;
             }
         }
 
