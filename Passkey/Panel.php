@@ -35,6 +35,7 @@ $pluginVersion = '1.1.3'; // 与 Plugin.php 中的版本号保持一致
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="color-scheme" content="light dark">
     <title>Passkey 身份验证管理 - <?php echo htmlspecialchars($options->title); ?></title>
+    <link rel="stylesheet" href="<?php echo $pluginUrl; ?>/assist/css/style.css?v=<?php echo $pluginVersion; ?>">
     <style>
         :root {
             --bg-primary: #f0f2f5;
@@ -808,71 +809,6 @@ $pluginVersion = '1.1.3'; // 与 Plugin.php 中的版本号保持一致
                 opacity: 1;
                 transform: translateY(0);
             }
-        }
-        
-        /* 增强的通知样式 */
-        #passkey-notification-container {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            pointer-events: none;
-        }
-
-        .passkey-notification {
-            position: relative !important;
-            top: auto !important;
-            right: auto !important;
-            left: auto !important;
-            min-width: 0;
-            max-width: none;
-            width: 100%;
-            padding: 16px 20px;
-            background: white;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            animation: passkeySlideIn 0.3s ease;
-            margin: 0 !important;
-            pointer-events: auto;
-        }
-        
-        .passkey-notification.success {
-            border-left: 4px solid var(--success-border);
-        }
-
-        .passkey-notification.error {
-            border-left: 4px solid var(--error-border);
-        }
-
-        .passkey-notification.info {
-            border-left: 4px solid var(--info-border);
-        }
-
-        .passkey-notification.warning {
-            border-left: 4px solid var(--warning-border, #f59e0b);
-        }
-        
-        .passkey-notification svg {
-            flex-shrink: 0;
-            width: 20px;
-            height: 20px;
-        }
-        
-        .passkey-notification.success svg {
-            color: #10b981;
-        }
-        
-        .passkey-notification.error svg {
-            color: #ef4444;
-        }
-        
-        .passkey-notification.info svg {
-            color: #3b82f6;
-        }
-        
-        .passkey-notification.warning svg {
-            color: #f59e0b;
         }
         
         /* 状态徽章 */
