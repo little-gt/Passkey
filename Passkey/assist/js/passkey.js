@@ -822,95 +822,109 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 页面内通知系统（使用SVG图标）
+     * 页面内通知系统
      */
-    function showNotification(message, type) {
-        type = type || 'info'; // info, success, error, warning
+    function showNotification(messages, type) {
+        type = type || 'info'; // info, success, error, warning, notice
         
-        // 查找或创建通知容器
+        // 查找或创建通知容器 (对齐 BooAdmin: 固定右上角,纵向堆叠)
         var container = document.getElementById('passkey-notification-container');
         if (!container) {
             container = document.createElement('div');
             container.id = 'passkey-notification-container';
-            container.style.cssText = 'position:fixed;top:20px;right:20px;z-index:99999;max-width:400px;';
+            // 容器样式已在 CSS 中定义,无需内联样式
             document.body.appendChild(container);
         }
         
         // 创建通知元素
         var notification = document.createElement('div');
-        notification.className = 'passkey-notification passkey-notification-' + type;
-        notification.style.cssText = 'background:var(--passport-card-bg,#fff);border:1px solid;padding:15px 20px;margin-bottom:10px;' +
-            'animation:slideInRight 0.3s ease;display:flex;align-items:flex-start;gap:12px;color:var(--passport-text,#1f2937);';
+        notification.className = 'passkey-notification ' + type;
         
-        // 设置边框颜色和图标
-        var borderColor = '#467b96';
-        var iconSvg = SVGIcons.info;
-        var iconColor = '#467b96';
-        
-        if (type === 'success') {
-            borderColor = '#10b981';
-            iconSvg = SVGIcons.check;
-            iconColor = '#10b981';
-        } else if (type === 'error') {
-            borderColor = '#ef4444';
-            iconSvg = SVGIcons.x;
-            iconColor = '#ef4444';
-        } else if (type === 'warning') {
-            borderColor = '#f59e0b';
-            iconSvg = SVGIcons.alert;
-            iconColor = '#f59e0b';
-        }
-        notification.style.borderColor = borderColor;
-        
-        // SVG图标容器
-        var iconSpan = document.createElement('span');
-        iconSpan.innerHTML = iconSvg;
-        iconSpan.style.cssText = 'flex-shrink:0;display:flex;align-items:center;justify-content:center;' +
-            'width:24px;height:24px;color:' + iconColor + ';';
-        
-        // 消息文本
-        var messageDiv = document.createElement('div');
-        messageDiv.style.cssText = 'flex:1;color:var(--passport-text,#1f2937);font-size:14px;line-height:1.5;word-break:break-word;';
-        messageDiv.textContent = message;
-        
-        // 关闭按钮
-        var closeBtn = document.createElement('button');
-        closeBtn.innerHTML = '×';
-        closeBtn.style.cssText = 'background:none;border:none;font-size:24px;line-height:1;cursor:pointer;' +
-            'color:var(--passport-placeholder,#6b7280);padding:0;margin-left:8px;flex-shrink:0;width:20px;height:20px;' +
-            'transition:color 0.2s ease;';
-        closeBtn.onmouseover = function() { this.style.color = 'var(--passport-text,#1f2937)'; };
-        closeBtn.onmouseout = function() { this.style.color = 'var(--passport-placeholder,#6b7280)'; };
-        closeBtn.onclick = function() {
-            notification.style.animation = 'slideOutRight 0.3s ease';
-            setTimeout(function() {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
+        // 标题映射
+        var titles = {
+            'success': '操作成功',
+            'error': '出错了',
+            'notice': '注意',
+            'warning': '警告',
+            'info': '提示'
         };
         
-        notification.appendChild(iconSpan);
-        notification.appendChild(messageDiv);
-        notification.appendChild(closeBtn);
+        // 选择图标
+        var iconSvg = SVGIcons.info;
+        if (type === 'success') {
+            iconSvg = SVGIcons.check;
+        } else if (type === 'error') {
+            iconSvg = SVGIcons.x;
+        } else if (type === 'warning' || type === 'notice') {
+            iconSvg = SVGIcons.alert;
+        }
+        
+        // 构建消息列表 (单条或多条消息)
+        var messagesHTML = '';
+        if (Array.isArray(messages)) {
+            if (messages.length === 1) {
+                messagesHTML = '<div class="passkey-notification-messages">' + messages[0] + '</div>';
+            } else {
+                messagesHTML = '<ul class="passkey-notification-messages">';
+                messages.forEach(function(msg) {
+                    messagesHTML += '<li>' + msg + '</li>';
+                });
+                messagesHTML += '</ul>';
+            }
+        } else {
+            messagesHTML = '<div class="passkey-notification-messages">' + messages + '</div>';
+        }
+        
+        // 图标 + 内容区域(标题+消息) + 关闭按钮
+        notification.innerHTML =
+            '<div class="passkey-notification-icon">' + iconSvg + '</div>' +
+            '<div class="passkey-notification-content">' +
+                '<div class="passkey-notification-title">' + titles[type] + '</div>' +
+                messagesHTML +
+            '</div>' +
+            '<button class="passkey-notification-close" aria-label="关闭">×</button>';
+        
         container.appendChild(notification);
         
-        // 自动关闭
+        // 触发显示动画 (添加 show 类)
         setTimeout(function() {
-            if (notification.parentNode) {
-                closeBtn.onclick();
+            notification.classList.add('show');
+        }, 10);
+        
+        // 关闭按钮事件
+        var closeBtn = notification.querySelector('.passkey-notification-close');
+        closeBtn.addEventListener('click', function() {
+            closeNotification(notification);
+        });
+        
+        // 自动关闭 (5秒后)
+        setTimeout(function() {
+            if (notification.parentNode && notification.classList.contains('show')) {
+                closeNotification(notification);
             }
         }, 5000);
         
-        // 添加动画样式（如果还没有）
+        // 动画样式现已在 CSS 中定义
         if (!document.getElementById('passkey-notification-styles')) {
             var style = document.createElement('style');
             style.id = 'passkey-notification-styles';
-            style.textContent = '@keyframes slideInRight{from{opacity:0;transform:translateX(100px)}to{opacity:1;transform:translateX(0)}}' +
-                '@keyframes slideOutRight{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(100px)}}' +
-                '@keyframes passkeyRotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+            // 动画已在 CSS 文件中定义,这里只添加旋转动画
+            style.textContent = '@keyframes passkeyRotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
             document.head.appendChild(style);
         }
+    }
+    
+    /**
+     * 关闭通知函数
+     */
+    function closeNotification(notification) {
+        notification.classList.remove('show');
+        notification.classList.add('hide');
+        setTimeout(function() {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 200);
     }
     
     /**
@@ -1098,7 +1112,7 @@ var PasskeyManager = (function() {
     }
     
     /**
-     * 显示注册表单，收集用户信息（增强表单验证）
+     * 显示注册表单，收集用户信息
      */
     function showRegisterForm() {
         return new Promise(function(resolve, reject) {

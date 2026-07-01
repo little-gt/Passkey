@@ -2,35 +2,170 @@
  * Passkey Plugin Styles
  */
 
-/* Passkey 登录容器 */
+/* ========================================
+ * Light Mode Defaults
+ * ======================================== */
+:root {
+    color-scheme: light;
+
+    /* === Primary Colors (BooAdmin light.css --booadmin-accent) === */
+    --passkey-primary: #5865f2;
+    --passkey-primary-hover: #4752c4;
+    --passkey-primary-active: #3c45a5;
+
+    /* === Background Colors (BooAdmin light.css surface system) === */
+    --passkey-bg: #f2f3f5;
+    --passkey-surface: #ffffff;
+    --passkey-surface-2: #f9fafb;
+    --passkey-surface-muted: #f3f4f6;
+
+    /* === Text Colors (BooAdmin light.css text system) === */
+    --passkey-text: #2e3338;
+    --passkey-muted: #5c5e66;
+    --passkey-placeholder: #9ca3af;
+
+    /* === Border Colors (BooAdmin light.css border) === */
+    --passkey-border: #e5e7eb;
+    --passkey-border-strong: #d1d5db;
+
+    /* === Semantic Colors - Success (BooAdmin light.css --booadmin-success) === */
+    --passkey-success: #16a34a;
+    --passkey-success-bg: #def7ec;
+    --passkey-success-text-strong: #264409;
+
+    /* === Semantic Colors - Danger/Error (BooAdmin light.css --booadmin-danger) === */
+    --passkey-danger: #dc2626;
+    --passkey-error-bg: #fde8e8;
+    --passkey-error-text: #9b1c1c;
+
+    /* === Semantic Colors - Warning (BooAdmin light.css --booadmin-warning) === */
+    --passkey-warning: #ea580c;
+    --passkey-warning-bg: #fff6bf;
+    --passkey-warning-text: #8a6d3b;
+
+    /* === Semantic Colors - Info (BooAdmin light.css --booadmin-info) === */
+    --passkey-info: #2563eb;
+    --passkey-info-bg: #eff6ff;
+
+    /* === Buttons - Light solid style === */
+    --passkey-btn-bg: var(--passkey-primary);
+    --passkey-btn-text: #ffffff;
+    --passkey-btn-border: transparent;
+    --passkey-btn-hover-bg: var(--passkey-primary-hover);
+    --passkey-btn-hover-text: #ffffff;
+
+    /* === Rectangular Design Specification (BooAdmin: border-radius: 0) === */
+    --passkey-radius-sm: 0px;
+    --passkey-radius-md: 0px;
+    --passkey-radius-lg: 0px;
+    --passkey-radius-full: 0px;
+
+    /* === Shadow Specification (Light style) === */
+    --passkey-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --passkey-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.08);
+
+    /* === Focus Ring (BooAdmin light.css --booadmin-focus-ring) === */
+    --passkey-focus-ring: rgba(88, 101, 242, 0.22);
+}
+
+/* ========================================
+ * Dark Mode Override (BooAdmin dark.css pure black neutral color palette)
+ * OLED friendly, eye-friendly, not harsh
+ * ======================================== */
+@media (prefers-color-scheme: dark) {
+    :root {
+        color-scheme: dark;
+
+        /* === Primary Colors - Deep indigo === */
+        --passkey-primary: #6366c7;
+        --passkey-primary-hover: #7c7fd6;
+        --passkey-primary-active: #9899e3;
+
+        /* === Background Colors - Pure black system === */
+        --passkey-bg: #000000;
+        --passkey-surface: #0d0d0d;
+        --passkey-surface-2: #151515;
+        --passkey-surface-muted: #080808;
+
+        /* === Text Colors - Soft white === */
+        --passkey-text: #e4e4e7;
+        --passkey-muted: #a1a1aa;
+        --passkey-placeholder: #71717a;
+
+        /* === Border Colors - Neutral === */
+        --passkey-border: #222222;
+        --passkey-border-strong: #333333;
+
+        /* === Semantic Colors - Success - Soft green === */
+        --passkey-success: #6bc78a;
+        --passkey-success-bg: #0a1f12;
+        --passkey-success-text-strong: #95d4ab;
+
+        /* === Semantic Colors - Danger/Error - Low saturation red === */
+        --passkey-danger: #e07a7a;
+        --passkey-error-bg: #2a0c10;
+        --passkey-error-text: #e8aaaa;
+
+        /* === Semantic Colors - Warning - Soft amber === */
+        --passkey-warning: #d4a72a;
+        --passkey-warning-bg: #2a2208;
+        --passkey-warning-text: #d4a72a;
+
+        /* === Semantic Colors - Info - Low saturation blue === */
+        --passkey-info: #7aadf0;
+        --passkey-info-bg: #081420;
+
+        /* === Buttons - Dark background soft text style === */
+        --passkey-btn-bg: #3a3c6e;
+        --passkey-btn-text: #c4c8e8;
+        --passkey-btn-border: #484a78;
+        --passkey-btn-hover-bg: #46487d;
+        --passkey-btn-hover-text: #ddddef;
+
+        /* === Shadow Specification (Dark style) === */
+        --passkey-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.15);
+        --passkey-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.18);
+
+        /* === Focus Ring === */
+        --passkey-focus-ring: rgba(99, 102, 199, 0.18);
+    }
+}
+
+/* ========================================
+ * Passkey Login Container
+ * ======================================== */
 #passkey-login-container {
     margin-top: 24px;
 }
 
-/* Passkey 登录按钮 */
+/* ========================================
+ * Passkey Login Button (Rectangular: border-radius: 0)
+ * ======================================== */
 #passkey-login-btn {
     width: 100%;
     height: 48px;
     padding: 0 24px;
-    background: var(--passport-primary, #467b96);
-    border: none;
-    color: #ffffff;
+    background: var(--passkey-btn-bg);
+    border: 1px solid var(--passkey-btn-border);
+    color: var(--passkey-btn-text);
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
-    transition: background-color 0.2s ease;
+    transition: all 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
+    border-radius: var(--passkey-radius-md);
 }
 
 #passkey-login-btn:hover {
-    background: var(--passport-primary-light, #5a8bb3);
+    background: var(--passkey-btn-hover-bg);
+    color: var(--passkey-btn-hover-text);
 }
 
 #passkey-login-btn:active {
-    background: var(--passport-primary-dark, #3a6378);
+    background: var(--passkey-primary-active);
 }
 
 #passkey-login-btn:disabled {
@@ -38,51 +173,218 @@
     cursor: not-allowed;
 }
 
-/* SVG 图标样式 */
+/* SVG Icon Style */
 #passkey-login-btn svg {
     width: 18px;
     height: 18px;
     stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
-/* Passkey 状态消息 */
-#passkey-status {
-    padding: 12px 16px;
-    margin: 15px 0;
-    border: 1px solid;
-    animation: passkeySlideIn 0.3s ease;
+/* ========================================
+ * Notification System Container (Aligned with BooAdmin)
+ * Fixed top-right, vertical stacking, rectangular design
+ * ======================================== */
+#passkey-notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-width: 360px;
+    pointer-events: none;
 }
 
-#passkey-status.success {
-    background-color: rgba(16, 185, 129, 0.1);
-    border-color: var(--passport-success, #10b981);
-    color: var(--passport-success, #10b981);
+/* ========================================
+ * Passkey Notification Card (Aligned with BooAdmin typecho-notification)
+ * Rectangular + Left border emphasis + No shadow + CSS variables
+ * ======================================== */
+.passkey-notification {
+    pointer-events: all;
+    background: var(--passkey-surface);
+    border: 1px solid var(--passkey-border);
+    box-shadow: none;
+    padding: 14px 16px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    width: 100%;
+    min-width: 300px;
+    opacity: 0;
+    transform: translateX(400px);
+    transition: all 0.3s cubic-bezier(0.23, 1, 0.32, 1);
+    border-left: 3px solid var(--passkey-muted);
+    color: var(--passkey-text);
+    border-radius: var(--passkey-radius-md);
 }
 
-#passkey-status.error {
-    background-color: rgba(239, 68, 68, 0.1);
-    border-color: var(--passport-error, #ef4444);
-    color: var(--passport-error, #ef4444);
+/* Show Animation */
+.passkey-notification.show {
+    opacity: 1;
+    transform: translateX(0);
 }
 
-#passkey-status.warning {
-    background-color: rgba(245, 158, 11, 0.1);
-    border-color: var(--passport-warning, #f59e0b);
-    color: var(--passport-warning, #f59e0b);
+/* Hide Animation */
+.passkey-notification.hide {
+    opacity: 0;
+    transform: translateX(400px);
+    transition: all 0.2s ease-out;
 }
 
-@keyframes passkeySlideIn {
-    from {
-        opacity: 0;
-        transform: translateY(-10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+/* ========================================
+ * Passkey Notification Icon (Aligned with BooAdmin size)
+ * ======================================== */
+.passkey-notification-icon {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--passkey-muted);
+    margin-top: 2px;
 }
 
-/* 旋转加载动画（用于 SVG 图标） */
+.passkey-notification-icon svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* ========================================
+ * Passkey Notification Content (Aligned with BooAdmin font size)
+ * ======================================== */
+.passkey-notification-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ========================================
+ * Passkey Notification Title (Aligned with BooAdmin font size)
+ * ======================================== */
+.passkey-notification-title {
+    font-weight: 600;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--passkey-text);
+}
+
+/* ========================================
+ * Passkey Notification Messages (Aligned with BooAdmin structure)
+ * ======================================== */
+.passkey-notification-messages {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.passkey-notification-messages li {
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--passkey-muted);
+    margin-bottom: 0;
+}
+
+.passkey-notification-messages li:not(:last-child) {
+    margin-bottom: 2px;
+}
+
+/* ========================================
+ * Passkey Notification Close Button (Aligned with BooAdmin size)
+ * ======================================== */
+.passkey-notification-close {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    border: none;
+    background: transparent;
+    color: var(--passkey-border-strong);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s;
+    font-size: 16px;
+    padding: 0;
+    margin-top: 2px;
+    line-height: 1;
+}
+
+.passkey-notification-close:hover {
+    color: var(--passkey-muted);
+}
+
+/* ========================================
+ * Passkey Notification Semantic Colors (Aligned with BooAdmin)
+ * success / error / warning / info
+ * ======================================== */
+
+/* === Success Style === */
+.passkey-notification.success {
+    border-left-color: var(--passkey-success);
+}
+
+.passkey-notification.success .passkey-notification-icon {
+    color: var(--passkey-success);
+}
+
+.passkey-notification.success .passkey-notification-title {
+    color: var(--passkey-success);
+}
+
+/* === Error Style === */
+.passkey-notification.error {
+    border-left-color: var(--passkey-danger);
+}
+
+.passkey-notification.error .passkey-notification-icon {
+    color: var(--passkey-danger);
+}
+
+.passkey-notification.error .passkey-notification-title {
+    color: var(--passkey-error-text);
+}
+
+/* === Warning Style === */
+.passkey-notification.warning {
+    border-left-color: var(--passkey-warning);
+}
+
+.passkey-notification.warning .passkey-notification-icon {
+    color: var(--passkey-warning);
+}
+
+.passkey-notification.warning .passkey-notification-title {
+    color: var(--passkey-warning);
+}
+
+/* === Info Style === */
+.passkey-notification.info {
+    border-left-color: var(--passkey-info);
+}
+
+.passkey-notification.info .passkey-notification-icon {
+    color: var(--passkey-info);
+}
+
+.passkey-notification.info .passkey-notification-title {
+    color: var(--passkey-text);
+}
+
+/* ========================================
+ * Rotation Animation (For SVG icons)
+ * ======================================== */
 @keyframes passkeyRotate {
     from {
         transform: rotate(0deg);
@@ -92,7 +394,34 @@
     }
 }
 
-/* 传统加载器（保留兼容性） */
+/* ========================================
+ * Slide Animation (Aligned with BooAdmin)
+ * ======================================== */
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(400px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(400px);
+    }
+}
+
+/* ========================================
+ * Traditional Loader (Keep compatibility)
+ * ======================================== */
 .passkey-loading {
     display: inline-block;
     width: 14px;
@@ -104,40 +433,9 @@
     vertical-align: middle;
 }
 
-/* 黑色模式适配 */
-@media (prefers-color-scheme: dark) {
-    #passkey-login-btn {
-        background: var(--passport-primary, #3b5a6e);
-    }
-
-    #passkey-login-btn:hover {
-        background: var(--passport-primary-light, #4a7090);
-    }
-
-    #passkey-login-btn:active {
-        background: var(--passport-primary-dark, #2d4555);
-    }
-
-    #passkey-status.success {
-        background-color: rgba(34, 197, 94, 0.08);
-        border-color: #22c55e;
-        color: #4ade80;
-    }
-
-    #passkey-status.error {
-        background-color: rgba(248, 113, 113, 0.08);
-        border-color: #f87171;
-        color: #fca5a5;
-    }
-
-    #passkey-status.warning {
-        background-color: rgba(251, 191, 36, 0.08);
-        border-color: #fbbf24;
-        color: #fcd34d;
-    }
-}
-
-/* 响应式设计 */
+/* ========================================
+ * Responsive Design
+ * ======================================== */
 @media (max-width: 768px) {
     #passkey-login-btn {
         height: 44px;
@@ -148,5 +446,15 @@
     #passkey-login-btn svg {
         width: 16px;
         height: 16px;
+    }
+
+    #passkey-notification-container {
+        left: 12px;
+        right: 12px;
+        max-width: none;
+    }
+
+    .passkey-notification {
+        min-width: auto;
     }
 }

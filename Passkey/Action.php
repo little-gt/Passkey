@@ -1110,9 +1110,25 @@ class Action extends Widget implements ActionInterface
         
         try {
             // 检查表是否存在
-            $tableExists = $this->db->fetchRow(
-                $this->db->query("SHOW TABLES LIKE '{$this->prefix}passkey_login_logs'")
-            );
+            $adapterName = $this->db->getAdapterName();
+            $tableName = $this->prefix . 'passkey_login_logs';
+            
+            if (false !== strpos($adapterName, 'Pgsql')) {
+                // PostgreSQL: 查询 information_schema
+                $tableExists = $this->db->fetchRow(
+                    $this->db->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{$tableName}'")
+                );
+            } elseif (false !== strpos($adapterName, 'SQLite')) {
+                // SQLite: 查询 sqlite_master
+                $tableExists = $this->db->fetchRow(
+                    $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='{$tableName}'")
+                );
+            } else {
+                // MySQL: 使用 SHOW TABLES 或 information_schema
+                $tableExists = $this->db->fetchRow(
+                    $this->db->query("SHOW TABLES LIKE '{$tableName}'")
+                );
+            }
             
             if (!$tableExists) {
                 error_log('[Passkey][DEBUG] login_logs table does not exist');

@@ -1,7 +1,7 @@
 # Passkey 插件安全文档
 
-**最后更新：** 2026年6月23日
-**当前版本：** v1.1.2
+**最后更新：** 2026年7月1日
+**当前版本：** v1.1.3
 
 ---
 
@@ -30,11 +30,11 @@ graph TD
     C --> |调用验证| D[验证引擎层<br/>WebAuthn.php]
     D --> |数据库操作| E[数据持久层<br/>Database]
     
-    A1[- WebAuthn API 调用<br/>- 浏览器兼容性检测<br/>- 输入预验证] -.-> A
+    A1[- WebAuthn API 调用<br/>- 浏览器兼容性检测<br/>- 输入预验证<br/>- 新用户注册流程] -.-> A
     B1[- 强制 HTTPS 生产环境<br/>- 防中间人攻击] -.-> B
-    C1[- 速率限制 可配置<br/>- Session 超时验证<br/>- 输入完整性校验<br/>- Origin 验证 可配置严格度<br/>- 凭证重用检查] -.-> C
-    D1[- ClientDataJSON 解析与验证<br/>- AttestationObject 解析<br/>- CBOR 安全解码 深度限制<br/>- COSE Key 提取<br/>- ES256/RS256 签名验证<br/>- IEEE P1363 ↔ DER 转换<br/>- Counter 回滚检测] -.-> D
-    E1[- 凭证存储 公钥/Counter<br/>- 登录日志记录<br/>- 事务保护 防竞态条件] -.-> E
+    C1[- 速率限制 可配置<br/>- Session 超时验证<br/>- 输入完整性校验<br/>- Origin 验证 可配置严格度<br/>- 凭证重用检查<br/>- 安全模式联动控制<br/>- 会话固定防护<br/>- 新用户注册验证] -.-> C
+    D1[- ClientDataJSON 解析与验证<br/>- AttestationObject 解析<br/>- CBOR 安全解码 深度限制<br/>- COSE Key 提取<br/>- ES256/RS256 签名验证<br/>- IEEE P1363 ↔ DER 转换<br/>- Counter 回滚检测<br/>- AAGUID 验证<br/>- 认证器类型校验] -.-> D
+    E1[- 凭证存储 公钥/Counter<br/>- 登录日志记录<br/>- 事务保护 防竞态条件<br/>- 多数据库支持<br/>- 用户账户创建] -.-> E
     
     style A fill:#e1f5ff,stroke:#01579b,stroke-width:2px
     style B fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
@@ -63,6 +63,9 @@ sequenceDiagram
     participant DB as 数据库
     
     U->>B: 点击注册 Passkey
+    B->>S: 请求注册选项<br/>(新用户: 用户名/邮箱/昵称)
+    S->>S: 验证用户输入<br/>生成安全 Challenge
+    S-->>B: 返回注册参数<br/>(含认证器策略)
     B->>W: 调用 navigator.credentials.create()
     W->>D: 请求生成密钥对
     D->>D: 生成公私钥对
@@ -70,14 +73,16 @@ sequenceDiagram
     D-->>W: 返回公钥 + 凭证ID
     W-->>B: 返回认证数据
     B->>S: 发送注册请求<br/>(公钥 + 凭证ID + 签名)
-    S->>S: 验证签名和数据
-    S->>DB: 存储公钥和凭证信息
+    S->>S: 验证签名、Origin、Counter
+    S->>DB: 新用户: 创建账户(事务保护)<br/>存储公钥和凭证信息
     DB-->>S: 存储成功
-    S-->>B: 注册成功
+    S->>S: 创建会话(session_regenerate_id)
+    S-->>B: 注册成功(新用户自动登录)
     B-->>U: 显示成功提示
     
     Note over D: 私钥永不离开设备
     Note over DB: 只存储公钥，无法推导私钥
+    Note over S: 事务保护防止竞态条件
 ```
 
 #### 2. 登录流程
@@ -92,26 +97,30 @@ sequenceDiagram
     participant DB as 数据库
     
     U->>B: 点击 Passkey 登录
-    B->>S: 请求登录 Challenge
-    S->>S: 生成随机 Challenge
-    S-->>B: 返回 Challenge
+    B->>S: 请求登录 Challenge (POST)
+    S->>S: 生成随机 Challenge (32字节)
+    S->>S: 保存到 Session (带超时时间戳)
+    S-->>B: 返回 Challenge + rpId
     B->>W: 调用 navigator.credentials.get()
     W->>D: 请求签名 Challenge
     D->>U: 生物识别验证<br/>(指纹/面容/PIN)
     U-->>D: 验证通过
     D->>D: 使用私钥签名 Challenge
-    D-->>W: 返回签名
+    D-->>W: 返回签名 + Counter
     W-->>B: 返回认证数据
     B->>S: 发送登录请求<br/>(凭证ID + 签名)
-    S->>DB: 查询公钥和 Counter
+    S->>S: 验证 Session 超时
+    S->>DB: 查询公钥和存储的 Counter
     DB-->>S: 返回凭证信息
-    S->>S: 验证签名<br/>检查 Counter 回滚
-    S->>DB: 更新 Counter
-    S-->>B: 登录成功 + Session
+    S->>S: 验证签名<br/>检查 Counter 回滚(克隆检测)
+    S->>DB: 更新 Counter(原子性保护)<br/>记录登录日志
+    DB-->>S: 更新成功
+    S->>S: 创建会话(session_regenerate_id)<br/>防会话固定攻击
+    S-->>B: 登录成功 + 用户信息
     B-->>U: 跳转到后台
     
     Note over D: 私钥签名，无法伪造
-    Note over S: 防重放攻击和克隆检测
+    Note over S: 防重放攻击、克隆检测、会话固定防护
 ```
 
 ---
@@ -127,10 +136,14 @@ sequenceDiagram
 - **生物识别：** 利用设备内置的指纹、面容识别等生物特征
 
 #### 安全增强措施
-- **Challenge 机制：** 每次认证生成随机 Challenge，防止重放攻击
-- **Counter 回滚检测：** 防止认证器克隆
-- **会话管理：** 登录成功后重新生成 Session ID，防止会话固定攻击
-- **速率限制：** 可配置的每 IP 和每用户尝试次数限制
+- **Challenge 机制：** 每次认证生成随机 Challenge（32字节），防止重放攻击
+- **Counter 回滚检测：** 防止认证器克隆，检测到回滚时记录并告警
+- **会话管理：** 登录成功后调用 `session_regenerate_id()`，防止会话固定攻击
+- **速率限制：** 可配置的每 IP 和每用户尝试次数限制（1-100次/小时）
+- **会话固定防护：** 登录成功后强制重新生成 Session ID，阻断会话固定攻击
+- **事务保护：** 数据库事务确保原子性，防止竞态条件
+- **认证器类型限制：** 支持平台验证器（Windows Hello、Touch ID）或跨平台验证器（Bitwarden、1Password、YubiKey）
+- **安全模式联动：** 严格模式下强制锁定为平台验证器，自定义模式恢复用户控制
 
 ### 2. 数据加密与保护
 
@@ -160,12 +173,27 @@ sequenceDiagram
 
 #### 预设安全模式
 
-| 模式 | 适用场景 | 速率限制 | 验证策略 | 性能影响 |
-|------|---------|---------|---------|---------|
-| **开发** | 开发/测试环境 | 宽松 (50/IP) | 宽松 Origin | 极低 |
-| **常规** | 个人博客/小型站点 | 适中 (10/IP) | 标准验证 | 低 |
-| **严格** | 高安全需求场景 | 严格 (5/IP) | 严格匹配 | 中等 |
-| **自定义** | 特殊需求 | 自定义 | 自定义 | 取决于配置 |
+| 模式 | 适用场景 | 速率限制 | Challenge 超时 | Origin 验证 | 认证器限制 | 性能影响 |
+|------|---------|---------|---------------|------------|------------|---------|
+| **开发** | 开发/测试环境 | 宽松 (50/IP) | 600秒 | 宽松 Origin | 用户控制 | 极低 |
+| **常规** | 个人博客/小型站点 | 适中 (10/IP) | 300秒 | 标准验证 | 用户控制 | 低 |
+| **严格** | 高安全需求场景 | 严格 (5/IP) | 180秒 | 严格匹配 | **强制平台验证器** | 中等 |
+| **自定义** | 特殊需求 | 自定义 | 自定义 | 自定义 | 用户控制 | 取决于配置 |
+
+#### 认证器类型限制
+
+| 选项 | 说明 | 适用场景 |
+|------|------|----------|
+| **允许所有验证器** | 支持平台验证器和跨平台验证器 | 日常使用、第三方密码管理器用户 |
+| **仅允许平台验证器** | 只允许设备内置认证器（Windows Hello、Touch ID） | 高安全需求、企业环境 |
+
+#### 安全模式联动规则
+
+| 联动规则 | 触发条件 | 行为 | 安全影响 |
+|---------|---------|------|----------|
+| 严格模式锁定 | 选择严格模式 | 自动锁定"认证器类型限制"为"仅平台验证器"，禁止修改 | 防止弱验证器绕过安全策略 |
+| 自定义模式恢复 | 切换到自定义模式或手动修改参数 | 恢复"认证器类型限制"为可交互状态，保留用户之前的选择 | 允许灵活配置 |
+| 参数变更检测 | 修改任何安全参数 | 自动检测是否偏离预设，偏离时切换到自定义模式 | 防止意外安全降级 |
 
 #### 可配置安全参数
 
@@ -182,6 +210,7 @@ sequenceDiagram
 | maxPublicKeyLength | 8192 | 2048-16384 | 公钥最大长度 |
 | maxCBORDepth | 10 | 5-20 | CBOR 解码最大深度 |
 | originValidationMode | standard | strict/standard/relaxed | Origin 验证模式 |
+| authenticatorAttachment | all | all/platform | 认证器类型限制 |
 
 ---
 
@@ -189,29 +218,38 @@ sequenceDiagram
 
 ### 1. API 端点列表
 
-| 端点 | 方法 | 功能 | 权限 |
-|------|------|------|------|
-| `/action/passkey?do=register-options` | GET/POST | 获取注册选项 | 公开 |
-| `/action/passkey?do=register-verify` | POST | 验证注册数据 | 公开 |
-| `/action/passkey?do=login-options` | GET | 获取登录选项 | 公开 |
-| `/action/passkey?do=login-verify` | POST | 验证登录数据 | 公开 |
-| `/action/passkey?do=list` | GET | 获取用户凭证列表 | 已登录用户 |
-| `/action/passkey?do=delete` | POST | 删除凭证 | 已登录用户 |
-| `/action/passkey?do=login-logs` | GET | 获取登录历史记录 | 已登录用户 |
+| 端点 | 方法 | 功能 | 权限 | 安全措施 |
+|------|------|------|------|----------|
+| `/action/passkey?do=register-options` | POST | 获取注册选项（支持新用户注册） | 公开 | Challenge 生成、Session 存储、超时控制 |
+| `/action/passkey?do=register-verify` | POST | 验证注册数据 | 公开 | 签名验证、Origin 验证、Counter 检查、事务保护 |
+| `/action/passkey?do=login-options` | POST | 获取登录选项 | 公开 | Challenge 生成、Session 存储、超时控制 |
+| `/action/passkey?do=login-verify` | POST | 验证登录数据 | 公开 | 签名验证、Origin 验证、Counter 回滚检测、会话固定防护 |
+| `/action/passkey?do=list` | GET | 获取用户凭证列表 | 已登录用户 | 权限验证、数据脱敏 |
+| `/action/passkey?do=delete` | POST | 删除凭证 | 已登录用户 | 权限验证、防 CSRF |
+| `/action/passkey?do=login-logs` | GET | 获取登录历史记录 | 已登录用户 | 权限验证、数据脱敏 |
 
 ### 2. 请求参数与响应格式
 
 #### 注册选项请求
 
-**请求：**
+**请求（新用户注册）：**
 ```json
 POST /action/passkey?do=register-options
 Content-Type: application/json
 
 {
-  "username": "user@example.com",
-  "displayName": "User Name"
+  "username": "myusername",
+  "email": "user@example.com",
+  "screenName": "My Display Name"
 }
+```
+
+**请求（已登录用户添加凭证）：**
+```json
+POST /action/passkey?do=register-options
+Content-Type: application/json
+
+{}
 ```
 
 **响应：**
@@ -225,8 +263,8 @@ Content-Type: application/json
     },
     "user": {
       "id": "...",
-      "name": "user@example.com",
-      "displayName": "User Name"
+      "name": "username",
+      "displayName": "Display Name"
     },
     "challenge": "...",
     "pubKeyCredParams": [
@@ -234,12 +272,17 @@ Content-Type: application/json
       {"type": "public-key", "alg": -257} // RS256
     ],
     "authenticatorSelection": {
-      "residentKey": "preferred",
-      "userVerification": "preferred"
+      "residentKey": "required",
+      "requireResidentKey": true,
+      "userVerification": "required"
     }
   }
 }
 ```
+
+**认证器策略说明：**
+- **常规/开发模式**：`residentKey: "required"`，支持平台和跨平台验证器
+- **严格模式**：`authenticatorAttachment: "platform"`，仅支持平台验证器
 
 #### 注册验证请求
 
@@ -249,28 +292,35 @@ POST /action/passkey?do=register-verify
 Content-Type: application/json
 
 {
-  "username": "user@example.com",
-  "displayName": "User Name",
-  "credential": {
-    "id": "...",
-    "rawId": "...",
-    "type": "public-key",
-    "response": {
-      "clientDataJSON": "...",
-      "attestationObject": "..."
-    }
+  "id": "...",
+  "rawId": "...",
+  "type": "public-key",
+  "response": {
+    "clientDataJSON": "...",
+    "attestationObject": "..."
   }
 }
 ```
 
-**响应：**
+**响应（已登录用户添加凭证）：**
 ```json
 {
   "success": true,
   "data": {
-    "userId": 1,
-    "credentialId": "...",
-    "message": "注册成功"
+    "message": "Passkey registered successfully",
+    "isNewUser": false
+  }
+}
+```
+
+**响应（新用户注册成功）：**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "注册成功！欢迎使用 Passkey 登录",
+    "isNewUser": true,
+    "redirect": "https://example.com/admin/"
   }
 }
 ```
@@ -292,12 +342,7 @@ Content-Type: application/json
   "data": {
     "challenge": "...",
     "rpId": "example.com",
-    "allowCredentials": [
-      {
-        "type": "public-key",
-        "id": "..."
-      }
-    ]
+    "userVerification": "required"
   }
 }
 ```
@@ -310,58 +355,91 @@ POST /action/passkey?do=login-verify
 Content-Type: application/json
 
 {
-  "credential": {
-    "id": "...",
-    "rawId": "...",
-    "type": "public-key",
-    "response": {
-      "clientDataJSON": "...",
-      "authenticatorData": "...",
-      "signature": "..."
+  "id": "...",
+  "rawId": "...",
+  "type": "public-key",
+  "response": {
+    "clientDataJSON": "...",
+    "authenticatorData": "...",
+    "signature": "..."
+  }
+}
+```
+
+**响应（登录成功）：**
+```json
+{
+  "success": true,
+  "data": {
+    "message": "登录成功",
+    "redirect": "https://example.com/admin/",
+    "user": {
+      "name": "username",
+      "screenName": "Display Name"
     }
   }
 }
 ```
 
-**响应：**
+**响应（凭证未注册，需要注册）：**
 ```json
 {
-  "success": true,
-  "data": {
-    "userId": 1,
-    "userName": "user@example.com",
-    "message": "登录成功"
-  }
+  "success": false,
+  "needRegister": true,
+  "error": "此设备尚未注册 Passkey"
 }
 ```
 
 ### 3. 错误码说明
 
-| 错误码 | 描述 | 解决方案 |
+#### HTTP 状态码
+
+| 状态码 | 描述 | 解决方案 |
 |--------|------|----------|
-| 400 | 请求参数错误 | 检查请求格式和参数 |
+| 400 | 请求参数错误（用户名/邮箱格式、参数缺失等） | 检查请求格式和参数 |
 | 401 | 未授权访问 | 确保用户已登录 |
 | 403 | 权限不足 | 检查用户权限 |
 | 404 | 端点不存在 | 检查 URL 路径 |
 | 429 | 速率限制超出 | 稍后再试 |
 | 500 | 服务器内部错误 | 查看服务器日志 |
+
+#### 业务错误码
+
+| 错误码 | 描述 | 解决方案 |
+|--------|------|----------|
 | 1001 | 无效的凭证数据 | 重新生成凭证 |
-| 1002 | 签名验证失败 | 检查设备状态 |
-| 1003 | 凭证已存在 | 使用不同的设备或浏览器 |
-| 1004 | Challenge 超时 | 重新发起认证 |
-| 1005 | Origin 验证失败 | 检查站点 URL 配置 |
-| 1006 | Counter 回滚检测 | 可能是凭证被克隆 |
+| 1002 | 签名验证失败 | 检查设备状态，确保使用正确的认证器 |
+| 1003 | 凭证已存在或用户名/邮箱已被占用 | 使用不同的设备或浏览器，或使用其他用户名/邮箱 |
+| 1004 | Challenge 超时 | 重新发起认证，确保在超时时间内完成 |
+| 1005 | Origin 验证失败 | 检查站点 URL 配置，确保使用 HTTPS |
+| 1006 | Counter 回滚检测 | 可能是凭证被克隆，立即禁用该凭证并检查账户安全 |
+| 1007 | 认证器类型不匹配 | 当前安全模式不允许使用该类型的认证器 |
+| 1008 | 全局注册已关闭 | 联系管理员开启注册功能 |
+| 1009 | 会话错误 | 清除浏览器缓存和 Cookie，重新尝试 |
+
+#### 前端错误码
+
+| 错误码 | 描述 | 解决方案 |
+|--------|------|----------|
+| NotAllowedError | 用户取消或超时 | 重新尝试，不要取消弹窗 |
+| InvalidStateError | 设备未注册 | 先在后台添加 Passkey |
+| NotSupportedError | 设备不支持 | 更换支持的设备或浏览器 |
+| SecurityError | 安全上下文错误 | 使用 HTTPS 或 localhost |
 
 ### 4. API 调用示例
 
 #### JavaScript 示例
 
 ```javascript
-// 注册 Passkey
+// 新用户注册 Passkey
 const registerOptions = await fetch('/action/passkey?do=register-options', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ username: 'user@example.com', displayName: 'User Name' })
+  body: JSON.stringify({ 
+    username: 'myusername', 
+    email: 'user@example.com', 
+    screenName: 'My Display Name' 
+  })
 }).then(r => r.json());
 
 const credential = await navigator.credentials.create({
@@ -371,12 +449,12 @@ const credential = await navigator.credentials.create({
 const registerResult = await fetch('/action/passkey?do=register-verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    username: 'user@example.com',
-    displayName: 'User Name',
-    credential: credential
-  })
+  body: JSON.stringify(credential)
 }).then(r => r.json());
+
+if (registerResult.success && registerResult.data.isNewUser) {
+  window.location.href = registerResult.data.redirect;
+}
 
 // 登录 Passkey
 const loginOptions = await fetch('/action/passkey?do=login-options', {
@@ -392,8 +470,14 @@ const assertion = await navigator.credentials.get({
 const loginResult = await fetch('/action/passkey?do=login-verify', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ credential: assertion })
+  body: JSON.stringify(assertion)
 }).then(r => r.json());
+
+if (loginResult.success) {
+  window.location.href = loginResult.data.redirect;
+} else if (loginResult.needRegister) {
+  console.log('此设备尚未注册 Passkey，请先注册');
+}
 ```
 
 ---
@@ -478,9 +562,14 @@ const loginResult = await fetch('/action/passkey?do=login-verify', {
 3. **设备内置安全：** 利用设备的 TPM/安全芯片存储私钥，防止私钥泄露
 4. **生物识别集成：** 结合指纹、面容等生物特征，提供多因素认证
 5. **端到端加密：** 整个认证过程使用非对称加密，确保数据安全
-6. **防重放攻击：** 每次认证使用随机 Challenge，防止重放攻击
-7. **防克隆检测：** 通过 Counter 机制检测认证器克隆
-8. **可配置安全级别：** 根据不同场景调整安全参数
+6. **防重放攻击：** 每次认证使用随机 Challenge（32字节），防止重放攻击
+7. **防克隆检测：** 通过 Counter 机制检测认证器克隆，检测到回滚时记录并告警
+8. **可配置安全级别：** 根据不同场景调整安全参数，支持四种模式（开发/常规/严格/自定义）
+9. **认证器类型限制：** 支持平台验证器（更高安全性）或跨平台验证器（更大灵活性）
+10. **安全模式联动：** 严格模式下强制锁定为平台验证器，防止弱验证器绕过安全策略
+11. **会话固定防护：** 登录成功后调用 `session_regenerate_id()`，阻断会话固定攻击
+12. **事务保护：** 数据库事务确保原子性，防止竞态条件
+13. **多数据库支持：** 兼容 MySQL、PostgreSQL、SQLite，保障数据安全存储
 
 ### 潜在风险
 
@@ -517,14 +606,26 @@ const loginResult = await fetch('/action/passkey?do=login-verify', {
    允许注册：关闭 (除非有公开注册需求)
    Origin 验证：严格模式 (strict)
    HTTPS：强制启用
+   认证器类型限制：
+     - 高安全需求：仅平台验证器 (platform)
+     - 日常使用：允许所有验证器 (all)
    ```
 
-3. **监控与审计**
+3. **严格模式强制配置**
+   ```
+   安全模式：严格模式
+   认证器类型限制：自动锁定为"仅平台验证器"（不可修改）
+   速率限制：5次/IP/小时
+   Challenge 超时：180秒
+   Origin 验证：严格匹配
+   ```
+
+4. **监控与审计**
    - **定期检查登录日志**：关注异常 IP、失败尝试激增
    - **审计速率限制触发**：查看服务器错误日志中的 `Rate limit exceeded`
    - **Counter 回滚告警**：搜索关键词 `Counter rollback detected`
 
-4. **安全维护**
+5. **安全维护**
    - **定期更新插件** (关注 GitHub Releases)
    - **定期备份凭证数据** (`passkey_credentials` 表)
    - **监控 PHP 错误日志** (及时发现异常)
