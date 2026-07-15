@@ -1110,15 +1110,15 @@ class Action extends Widget implements ActionInterface
         
         try {
             // 检查表是否存在
-            $adapterName = $this->db->getAdapterName();
+            $adapter = $this->db->getAdapterName();
             $tableName = $this->prefix . 'passkey_login_logs';
             
-            if (false !== strpos($adapterName, 'Pgsql')) {
+            if (false !== stristr($adapter, 'Pgsql')) {
                 // PostgreSQL: 查询 information_schema
                 $tableExists = $this->db->fetchRow(
                     $this->db->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '{$tableName}'")
                 );
-            } elseif (false !== strpos($adapterName, 'SQLite')) {
+            } elseif (false !== stristr($adapter, 'SQLite')) {
                 // SQLite: 查询 sqlite_master
                 $tableExists = $this->db->fetchRow(
                     $this->db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='{$tableName}'")

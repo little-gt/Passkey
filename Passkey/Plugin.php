@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author GARFIELDTOM
- * @version 1.1.3
+ * @version 1.1.4
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.1.3';
+    const VERSION = '1.1.4';
     /**
      * 激活插件方法
      */
@@ -66,7 +66,7 @@ class Plugin implements PluginInterface
         $adapter = $db->getAdapterName();
         
         // 创建 passkey_credentials 表
-        if ($adapter == 'Pgsql') {
+        if (false !== stristr($adapter, 'Pgsql')) {
             $sql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_credentials (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -77,7 +77,7 @@ class Plugin implements PluginInterface
                 last_used INTEGER DEFAULT NULL,
                 UNIQUE(credential_id)
             )";
-        } else if ($adapter == 'SQLite') {
+        } else if (false !== stristr($adapter, 'SQLite')) {
             $sql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_credentials (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -110,7 +110,7 @@ class Plugin implements PluginInterface
         }
         
         // 创建 passkey_login_logs 表
-        if ($adapter == 'Pgsql') {
+        if (false !== stristr($adapter, 'Pgsql')) {
             $logSql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_login_logs (
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
@@ -121,7 +121,7 @@ class Plugin implements PluginInterface
                 login_time INTEGER NOT NULL,
                 status VARCHAR(20) DEFAULT 'success'
             )";
-        } else if ($adapter == 'SQLite') {
+        } else if (false !== stristr($adapter, 'SQLite')) {
             $logSql = "CREATE TABLE IF NOT EXISTS " . $prefix . "passkey_login_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -170,9 +170,9 @@ class Plugin implements PluginInterface
     {
         try {
             // 1. 检查 passkey_credentials 表是否有 last_used 字段
-            if ($adapter == 'Pgsql') {
+            if (false !== stristr($adapter, 'Pgsql')) {
                 $checkSql = "SELECT column_name FROM information_schema.columns WHERE table_name='" . $prefix . "passkey_credentials' AND column_name='last_used'";
-            } else if ($adapter == 'SQLite') {
+            } else if (false !== stristr($adapter, 'SQLite')) {
                 $checkSql = "PRAGMA table_info(" . $prefix . "passkey_credentials)";
             } else {
                 $checkSql = "SHOW COLUMNS FROM " . $prefix . "passkey_credentials LIKE 'last_used'";
@@ -180,7 +180,7 @@ class Plugin implements PluginInterface
             
             $result = $db->fetchAll($checkSql);
             
-            if ($adapter == 'SQLite') {
+            if (false !== stristr($adapter, 'SQLite')) {
                 // SQLite 返回所有字段，需要检查是否包含 last_used
                 $hasLastUsed = false;
                 foreach ($result as $row) {
@@ -196,9 +196,9 @@ class Plugin implements PluginInterface
             
             // 如果字段不存在，添加它
             if (empty($result)) {
-                if ($adapter == 'Pgsql') {
+                if (false !== stristr($adapter, 'Pgsql')) {
                     $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INTEGER DEFAULT NULL";
-                } else if ($adapter == 'SQLite') {
+                } else if (false !== stristr($adapter, 'SQLite')) {
                     $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INTEGER DEFAULT NULL";
                 } else {
                     $alterSql = "ALTER TABLE " . $prefix . "passkey_credentials ADD COLUMN last_used INT DEFAULT NULL";
@@ -207,7 +207,7 @@ class Plugin implements PluginInterface
             }
             
             // 2. 检查并修复 credential_id 字段长度（仅 MySQL）
-            if ($adapter != 'Pgsql' && $adapter != 'SQLite') {
+            if (false === stristr($adapter, 'Pgsql') && false === stristr($adapter, 'SQLite')) {
                 try {
                     $columnInfo = $db->fetchAll("SHOW FULL COLUMNS FROM " . $prefix . "passkey_credentials WHERE Field = 'credential_id'");
                     if (!empty($columnInfo)) {
