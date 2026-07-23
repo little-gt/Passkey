@@ -20,7 +20,7 @@
 | Passkey | 配套插件 | https://cnb.cool/little-gt/Passkey | https://github.com/little-gt/Passkey |
 | Passport | 配套插件 | https://cnb.cool/little-gt/Passport | https://github.com/little-gt/Passport |
 
-![TDP](https://cnb.cool/little-gt/Passkey/-/git/raw/main/screenshot/cloud-tdp.png)
+![TDP](https://cnb.cool/little-gt/Passkey/-/git/raw/main/screenshots/cloud-tdp.png)
 
 来自腾讯云先锋会员 时宇（https://cnb.cool/u/coolerxde） 的系列开源项目，专注于提升 Typecho 1.3.0 的性能，用户体验，以及安全性。并且探索新的技术方向。
 
