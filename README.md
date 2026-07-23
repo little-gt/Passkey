@@ -2,7 +2,7 @@
 
 一个为 Typecho 博客系统提供企业级 Passkey（WebAuthn）登录功能的插件，使用生物识别（指纹、面容）或设备 PIN 快速安全登录。
 
-![Passkey](https://img.shields.io/badge/Passkey-v1.1.4-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
+![Passkey](https://img.shields.io/badge/Passkey-v1.2.0-007EC6?style=for-the-badge&logo=securityscorecard&logoColor=white)
 [![PHP Version](https://img.shields.io/badge/PHP-7.4+-007EC6?style=for-the-badge&logo=php&logoColor=white)](https://www.php.net/)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
@@ -1040,6 +1040,7 @@ PasskeyManager.showNotification('提示信息', 'info');
 
 | 版本 | 日期 | 说明 | 更新内容 |
 |------|------|------|----------|
+| 1.2.0 | 2026-07-23 | 样式优化升级 | 对齐 BooAdmin 字体，提升用户体验 |
 | 1.1.4 | 2026-07-15 | 数据库检测更新 | 优化数据库检测逻辑，避免由于不同版本的驱动前缀导致的检测错误 |
 | 1.1.3 | 2026-07-01 | 多项质量更新 | 适配 MySQL、SQLite 和 PostgreSQL 数据库；优化在 BooAdmin 中的显示效果 |
 | 1.1.2 | 2026-06-23 | 样式优化升级 | 暗色模式优化为黑色配色，减少视觉刺激，搭配 BooAdmin 使用体验更佳。 |

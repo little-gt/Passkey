@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author GARFIELDTOM
- * @version 1.1.4
+ * @version 1.2.0
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.1.4';
+    const VERSION = '1.2.0';
     /**
      * 激活插件方法
      */
@@ -499,6 +499,9 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         
         // 安全模式配置
         self::addSecurityConfig($form, $plugin);
+        
+        // IP 地址获取策略配置
+        self::addIpSourceConfig($form, $plugin);
     }
     
     /**
@@ -1514,6 +1517,131 @@ document.addEventListener(\'DOMContentLoaded\', function() {
      * 个人用户的配置面板（空实现）
      */
     public static function personalConfig(Form $form) {}
+    
+    /**
+     * 添加 IP 地址获取策略配置
+     */
+    private static function addIpSourceConfig($form, $plugin)
+    {
+        $ipSourceDescription = '如果您的站点位于 CDN (如 Cloudflare) 或反向代理之后，请选择"代理头"或"自定义请求头"，否则速率限制功能将无法正确识别用户 IP。';
+        
+        $currentIpSource = ($plugin && isset($plugin->ipSource)) ? $plugin->ipSource : 'default';
+        
+        $ipSource = new \Typecho\Widget\Helper\Form\Element\Select(
+            'ipSource',
+            array(
+                'default' => '默认 (REMOTE_ADDR)',
+                'proxy' => '代理头 (X-Forwarded-For / Client-IP)',
+                'custom' => '自定义请求头'
+            ),
+            $currentIpSource,
+            '<h2>IP 识别策略</h2>IP 地址获取方式',
+            $ipSourceDescription
+        );
+        $form->addInput($ipSource);
+        
+        $currentCustomHeader = ($plugin && isset($plugin->customIpHeader)) ? $plugin->customIpHeader : 'HTTP_CF_CONNECTING_IP';
+        
+        $customIpHeader = new \Typecho\Widget\Helper\Form\Element\Text(
+            'customIpHeader',
+            NULL,
+            $currentCustomHeader,
+            '自定义 IP 请求头名称',
+            '仅当上面的选项选择"自定义请求头"时生效。例如 Cloudflare 用户可填写 <code>HTTP_CF_CONNECTING_IP</code>。'
+        );
+        $form->addInput($customIpHeader);
+        
+        // 添加动态切换 JS
+        echo self::getIpSourceJs();
+    }
+    
+    /**
+     * 获取 IP 策略切换的 JavaScript
+     */
+    private static function getIpSourceJs()
+    {
+        return <<<JS
+        <script>
+            document.addEventListener('DOMContentLoaded', function() {
+                var ipSourceSelector = document.querySelector('[name="ipSource"]');
+                var customIpHeaderInput = document.querySelector('[name="customIpHeader"]');
+                
+                if (!ipSourceSelector || !customIpHeaderInput) return;
+                
+                function toggleIpSettings() {
+                    var type = ipSourceSelector.value;
+                    var container = customIpHeaderInput.closest('li');
+                    
+                    // 仅在选择"自定义请求头"时显示输入框
+                    if (type === 'custom') {
+                        container.style.display = '';
+                    } else {
+                        container.style.display = 'none';
+                    }
+                }
+                
+                ipSourceSelector.addEventListener('change', toggleIpSettings);
+                toggleIpSettings(); // 初始化
+            });
+        </script>
+JS;
+    }
+    
+    /**
+     * 获取客户端 IP 地址（根据配置）
+     * 
+     * @return string IP 地址
+     */
+    public static function getClientIp()
+    {
+        $options = Options::alloc();
+        
+        // 安全获取插件配置
+        $plugin = null;
+        try {
+            $plugin = $options->plugin('Passkey');
+        } catch (\Exception $e) {
+            // 配置不存在，使用默认方式
+        }
+        
+        $ipSource = ($plugin && isset($plugin->ipSource)) ? $plugin->ipSource : 'default';
+        
+        $ip = '';
+        
+        switch ($ipSource) {
+            case 'proxy':
+                // 从代理头获取（X-Forwarded-For 或 Client-IP）
+                $ip = isset($_SERVER['HTTP_X_FORWARDED_FOR']) ? $_SERVER['HTTP_X_FORWARDED_FOR'] : '';
+                if (empty($ip)) {
+                    $ip = isset($_SERVER['HTTP_CLIENT_IP']) ? $_SERVER['HTTP_CLIENT_IP'] : '';
+                }
+                // X-Forwarded-For 可能包含多个 IP，取第一个
+                if (!empty($ip) && strpos($ip, ',') !== false) {
+                    $ips = explode(',', $ip);
+                    $ip = trim($ips[0]);
+                }
+                break;
+                
+            case 'custom':
+                // 从自定义请求头获取
+                $customHeader = ($plugin && isset($plugin->customIpHeader)) ? $plugin->customIpHeader : 'HTTP_CF_CONNECTING_IP';
+                $ip = isset($_SERVER[$customHeader]) ? $_SERVER[$customHeader] : '';
+                break;
+                
+            case 'default':
+            default:
+                // 默认方式：直接获取 REMOTE_ADDR
+                $ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
+                break;
+        }
+        
+        // 验证 IP 地址格式
+        if (empty($ip) || !filter_var($ip, FILTER_VALIDATE_IP)) {
+            $ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '0.0.0.0';
+        }
+        
+        return $ip;
+    }
     
     /**
      * 在后台头部注入资源

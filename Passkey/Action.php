@@ -102,7 +102,8 @@ class Action extends Widget implements ActionInterface
             $sensitiveActions = array('register-verify', 'login-verify', 'register-options', 'login-options');
             if (in_array($action, $sensitiveActions, true)) {
                 if (!$this->checkRateLimit()) {
-                    error_log('[Passkey][WARNING] Rate limit exceeded - IP: ' . $this->validateIpAddress($this->request->getIp()) . 
+                    $clientIp = Plugin::getClientIp();
+                    error_log('[Passkey][WARNING] Rate limit exceeded - IP: ' . $this->validateIpAddress($clientIp) . 
                              ' - ErrCode: ' . self::ERR_RATE_LIMIT);
                     $this->error('请求过于频繁，请稍后再试', self::ERR_RATE_LIMIT);
                     return;
@@ -285,7 +286,7 @@ class Action extends Widget implements ActionInterface
             if ($existingUser || $existingEmail) {
                 // 记录尝试使用已占用的用户名/邮箱的行为
                 error_log('[Passkey][WARNING] Registration attempt with existing username or email - ' .
-                         'IP: ' . $this->request->getIp() . 
+                         'IP: ' . Plugin::getClientIp() . 
                          ', Username: ' . $userName . 
                          ', Email: ' . substr($userEmail, 0, 3) . '***');
                 
@@ -669,7 +670,7 @@ class Action extends Widget implements ActionInterface
                     }
                     
                     // 记录注册事件
-                    error_log('[Passkey][INFO] New user registered successfully - User ID: ' . $userId . ', IP: ' . $this->request->getIp());
+                    error_log('[Passkey][INFO] New user registered successfully - User ID: ' . $userId . ', IP: ' . Plugin::getClientIp());
                     
                     $this->success(array(
                         'message' => '注册成功！欢迎使用 Passkey 登录',
@@ -891,7 +892,7 @@ class Action extends Widget implements ActionInterface
                 error_log('[Passkey][ERROR] Login verification failed for user ' . $credential['user_id'] . 
                          ': ' . $e->getMessage() . 
                          ' | ErrCode: ' . $errorCode . 
-                         ' | IP: ' . $this->validateIpAddress($this->request->getIp()) . 
+                         ' | IP: ' . $this->validateIpAddress(Plugin::getClientIp()) . 
                          ' | UA: ' . ($_SERVER['HTTP_USER_AGENT'] ?? 'Unknown'));
                 
                 $this->logLoginActivity($credential['user_id'], $credential['id'], $challenge, 'failed');
@@ -951,7 +952,7 @@ class Action extends Widget implements ActionInterface
             
             // 记录成功登录事件
             error_log('[Passkey][INFO] User logged in successfully - User ID: ' . $user['uid'] . 
-                     ', IP: ' . $this->request->getIp() . 
+                     ', IP: ' . Plugin::getClientIp() . 
                      ', Credential ID: ' . substr($credentialId, 0, 20) . '...');
             
             $this->success(array(
@@ -975,7 +976,7 @@ class Action extends Widget implements ActionInterface
     {
         try {
             // 验证并清理 IP 地址
-            $ipAddress = $this->validateIpAddress($this->request->getIp());
+            $ipAddress = $this->validateIpAddress(Plugin::getClientIp());
             
             $this->db->query($this->db->insert($this->prefix . 'passkey_login_logs')
                 ->rows(array(
@@ -1221,7 +1222,7 @@ class Action extends Widget implements ActionInterface
     {
         $this->startSession();
         $now = time();
-        $ip = $this->request->getIp();
+        $ip = Plugin::getClientIp();
         
         // 清理过期的记录
         if (!isset($_SESSION['passkey_rate_limit'])) {
