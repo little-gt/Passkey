@@ -19,7 +19,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) {
  * 
  * @package Passkey
  * @author GARFIELDTOM
- * @version 1.2.0
+ * @version 1.2.1
  * @link https://www.garfieldtom.cool
  */
 class Plugin implements PluginInterface
@@ -27,7 +27,7 @@ class Plugin implements PluginInterface
     /**
      * 插件版本号 - 用于资源缓存控制
      */
-    const VERSION = '1.2.0';
+    const VERSION = '1.2.1';
     /**
      * 激活插件方法
      */
@@ -347,7 +347,7 @@ class Plugin implements PluginInterface
                 $modeDescription .= '<li>找到登录表单 <code>&lt;form&gt;...&lt;/form&gt;</code></li>';
                 $modeDescription .= '<li>在表单结束标签 <code>&lt;/form&gt;</code> 后面添加以下代码</li>';
                 $modeDescription .= '</ol>';
-                $modeDescription .= '<textarea readonly onclick="this.select()" class="pk-textarea-code" style="width:100%;height:220px;font-family:Consolas,Monaco,monospace;font-size:11px;margin-top:10px;padding:10px;">';
+                $modeDescription .= '<textarea readonly class="pk-textarea-code" data-action="select-all" style="width:100%;height:220px;font-family:Consolas,Monaco,monospace;font-size:11px;margin-top:10px;padding:10px;">';
                 $modeDescription .= htmlspecialchars('<!-- Passkey 登录 -->
 <link rel="stylesheet" href="' . $pluginUrl . '/assist/css/style.css?v=' . $version . '">
 <script>var PASSKEY_ACTION_URL = "' . $actionUrl . '";</script>
@@ -628,7 +628,7 @@ document.addEventListener(\'DOMContentLoaded\', function() {
                 </ul>
             </div>
             
-            <button type="button" class="security-reset-btn" onclick="resetSecurityParams()">
+            <button type="button" class="security-reset-btn" data-action="reset-to-preset">
                 重置为预设参数
             </button>
         </div>
@@ -1317,18 +1317,33 @@ document.addEventListener(\'DOMContentLoaded\', function() {
             return _public;
         })();
         
-        // ====== 向后兼容的全局函数 ======
-        // 保留原有全局函数名作为 PasskeySettings 的代理，确保 HTML 中 onclick 等内联调用不受影响
-        
-        /** @deprecated 使用 Passkey.syncParam() 替代 */
-        function syncParamValue(visibleInput) { return PasskeySettings.syncParam(visibleInput); }
-        
-        /** @deprecated 使用 Passkey.checkPresetMatch() 替代 */
-        function checkAndClearModeSelection() { return PasskeySettings.checkPresetMatch(); }
-        
-        /** @deprecated 使用 Passkey.resetToPreset() 替代 */
-        function resetSecurityParams() { return PasskeySettings.resetToPreset(); }
-        
+        /**
+         * 事件委托：替代历史上的内联 onclick 与 @deprecated 全局代理函数。
+         * 新增动作只需在 HTML 上加 data-action，并在此扩展分支，无需新增全局函数。
+         */
+        document.addEventListener(\'click\', function (event) {
+            var trigger = event.target.closest ? event.target.closest(\'[data-action]\') : null;
+            if (!trigger) {
+                return;
+            }
+            var action = trigger.getAttribute(\'data-action\');
+            if (action === \'reset-to-preset\') {
+                event.preventDefault();
+                PasskeySettings.resetToPreset();
+            } else if (action === \'show-param-info\') {
+                event.preventDefault();
+                showParamInfo(event, trigger.getAttribute(\'data-param\'));
+            }
+        });
+
+        // 代码框点击全选：select 不是 click 的可取消行为，用 focus/click 委托实现
+        document.addEventListener(\'click\', function (event) {
+            var el = event.target.closest ? event.target.closest(\'[data-action="select-all"]\') : null;
+            if (el && typeof el.select === \'function\') {
+                el.select();
+            }
+        });
+
         /**
          * 参数说明 Tooltip（独立工具函数，保持全局可用）
          * 此函数与设置联动无关，属于纯 UI 辅助功能
@@ -1453,7 +1468,7 @@ document.addEventListener(\'DOMContentLoaded\', function() {
         // 使用独特的ID来标识可见的输入框，并通过JavaScript同步到隐藏的表单字段
         return '<div class="param-group">
             <label>' . $label . '
-                <a href="#" class="security-param-info" onclick="showParamInfo(event, \'' . $key . '\')">
+                <a href="#" class="security-param-info" data-action="show-param-info" data-param="' . htmlspecialchars($key, ENT_QUOTES, 'UTF-8') . '">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"></circle>
                         <line x1="12" y1="16" x2="12" y2="12"></line>

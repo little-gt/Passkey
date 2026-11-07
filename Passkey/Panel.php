@@ -23,7 +23,7 @@ $options = \Widget\Options::alloc();
 $pluginUrl = $options->pluginUrl . '/Passkey';
 
 // 获取插件版本号
-$pluginVersion = '1.2.0';
+$pluginVersion = '1.2.1';
 
 // 获取用户头像（矩形设计）
 function getPasskeyAvatar($email, $name, $size = 28) {
